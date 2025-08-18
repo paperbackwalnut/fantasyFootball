@@ -1,17 +1,19 @@
-import { SupabaseClient, Session, User } from '@supabase/supabase-js';
-import type { Database } from './lib/database.types';
+// src/app.d.ts - TypeScript definitions
+import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
 
 declare global {
 	namespace App {
 		interface Locals {
-			supabase: SupabaseClient<Database>;
-			safeGetSession(): Promise<{ session: Session | null; user: User | null }>;
+			supabase: SupabaseClient;
+			safeGetSession: () => Promise<{ session: Session | null; user: User | null }>;
+			session: Session | null;
+			user: User | null;
+			cookies: {
+				getAll: () => Array<{ name: string; value: string; options?: Record<string, any> }>;
+			};
 		}
 		interface PageData {
 			session: Session | null;
-			user: User | null;
-			cookies: Record<string, string>;
-			supabase?: SupabaseClient<Database>; // Optional since it's added in client layout
 		}
 	}
 }

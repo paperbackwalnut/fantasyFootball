@@ -10,8 +10,18 @@
 		"sourceMap": true,
 		"strict": true,
 		"moduleResolution": "bundler",
-		"allowImportingTsExtensions": true
-	}
+		"types": ["svelte"],
+		"typeRoots": ["node_modules/@types"],
+		"paths": {
+			"$env/*": ["./node_modules/@sveltejs/kit/src/runtime/env/*"],
+			"$lib/*": ["./src/lib/*"]
+		}
+	},
+	"include": [
+		"src/**/*",
+		"src/lib/espn/espnTypes.tss.ts",
+		"src/lib/types/espn-fantasy-football-api-node.d.ts"
+	]
 	// Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
 	// except $lib which is handled by https://svelte.dev/docs/kit/configuration#files
 	//
