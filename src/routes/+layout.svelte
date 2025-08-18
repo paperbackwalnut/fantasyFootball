@@ -65,7 +65,14 @@
 									class:text-blue-600={isActive('/import')}>Import</a
 								>
 							</li>
-
+							<li>
+								<a
+									href="/draft"
+									class="transition-colors hover:text-gray-900"
+									class:text-gray-700={!isActive('/draft')}
+									class:text-blue-600={isActive('/draft')}>Live Draft</a
+								>
+							</li>
 							<li class="hidden text-sm text-gray-500 sm:block">
 								Welcome, {user.email}
 							</li>
