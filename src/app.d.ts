@@ -16,6 +16,15 @@ declare global {
 			session: Session | null;
 		}
 	}
+	interface Window {
+		draftSyncDebug?: {
+			setBackendUrl(url: string): void;
+		};
+		draftSyncState?: {
+			mockMode: boolean;
+			mockLeagueId: string;
+		};
+	}
 }
 
 export {};

@@ -4,111 +4,166 @@ import type { RequestHandler } from './$types';
 
 type PickContext = 'early' | 'average' | 'late';
 
-type RecentPick = {
+type DraftPick = {
 	pick_number: number;
 	round_number: number;
-	player_position: string; // e.g. 'QB','RB','WR','TE','K','DST', etc.
-	pick_context?: PickContext | null; // can be null/undefined from DB
+	player_position: string;
+	pick_context?: PickContext | null;
 	position_rank?: number | null;
-	avg_position_pick?: number | null; // ADP / average position
+	avg_position_pick?: number | null;
 };
+
+type LiveInsight = {
+	type: string;
+	message: string;
+	severity: 'info' | 'positive' | 'warning';
+};
+
 export const GET: RequestHandler = async ({ locals, params }) => {
 	const { user } = await locals.safeGetSession();
 	if (!user) throw error(401, 'Unauthorized');
 
 	const { leagueId } = params;
 
-	// Determine platform for this league
-	const { data: leagueData, error: leagueError } = await locals.supabase
-		.from('leagues')
-		.select('platform')
-		.eq('id', leagueId)
-		.single();
+	try {
+		// Determine platform for this league
+		const { data: leagueData, error: leagueError } = await locals.supabase
+			.from('leagues')
+			.select('platform')
+			.eq('id', leagueId)
+			.single();
 
-	if (leagueError || !leagueData) {
-		throw error(404, 'League not found');
-	}
-
-	const platform = leagueData.platform;
-	const table = platform === 'ESPN' ? 'espn_draft_picks' : 'sleeper_draft_picks';
-
-	// Get all draft picks for analysis
-	const { data: picks, error: picksError } = await locals.supabase
-		.from(table)
-		.select(
-			`
-			pick_number,
-			round_number,
-			player_position,
-			pick_context,
-			position_rank,
-			avg_position_pick
-		`
-		)
-		.eq('league_id', leagueId)
-		.order('pick_number', { ascending: true });
-
-	if (picksError) {
-		console.error('Database error:', picksError);
-		throw error(500, 'Failed to fetch draft data for analysis');
-	}
-
-	// Calculate analytics
-	const positionBreakdown: Record<string, number> = {};
-	const pickContextStats: Record<string, number> = { early: 0, average: 0, late: 0 };
-	const roundAnalysis: Array<{ round: number; picks: number; avgPositionValue: number }> = [];
-
-	// Process picks for analytics
-	(picks || []).forEach((pick) => {
-		// Position breakdown
-		positionBreakdown[pick.player_position] = (positionBreakdown[pick.player_position] || 0) + 1;
-
-		// Pick context stats
-		if (pick.pick_context) {
-			pickContextStats[pick.pick_context] = (pickContextStats[pick.pick_context] || 0) + 1;
+		if (leagueError || !leagueData) {
+			throw error(404, 'League not found');
 		}
-	});
 
-	// Round analysis
-	const picksByRound: Record<number, typeof picks> = {};
-	(picks || []).forEach((pick) => {
-		if (!picksByRound[pick.round_number]) {
-			picksByRound[pick.round_number] = [];
+		const platform = leagueData.platform;
+		let picks: DraftPick[] = [];
+
+		if (platform === 'ESPN') {
+			// Get ESPN picks with available columns
+			const { data: espnPicks, error: picksError } = await locals.supabase
+				.from('espn_draft_picks')
+				.select(
+					`
+					pick_number,
+					round_number,
+					player_position,
+					pick_context,
+					position_rank,
+					avg_position_pick
+				`
+				)
+				.eq('league_id', leagueId)
+				.order('pick_number', { ascending: true });
+
+			if (picksError) {
+				console.error('Database error:', picksError);
+				throw error(500, `Failed to fetch draft data: ${picksError.message}`);
+			}
+			picks = (espnPicks || []) as DraftPick[];
+		} else if (platform === 'Sleeper') {
+			// Get Sleeper picks with available columns (no pick_context)
+			const { data: sleeperPicks, error: picksError } = await locals.supabase
+				.from('sleeper_draft_picks')
+				.select(
+					`
+					pick_number,
+					round_number,
+					player_position
+				`
+				)
+				.eq('league_id', leagueId)
+				.order('pick_number', { ascending: true });
+
+			if (picksError) {
+				console.error('Database error:', picksError);
+				throw error(500, `Failed to fetch draft data: ${picksError.message}`);
+			}
+
+			// Add default values for missing columns
+			picks = (sleeperPicks || []).map((pick) => ({
+				...pick,
+				pick_context: 'average' as PickContext,
+				position_rank: 0,
+				avg_position_pick: null
+			})) as DraftPick[];
 		}
-		picksByRound[pick.round_number].push(pick);
-	});
 
-	Object.entries(picksByRound).forEach(([round, roundPicks]) => {
-		const avgValue =
-			roundPicks.reduce((sum, pick) => {
-				const value = pick.avg_position_pick ? pick.avg_position_pick - pick.pick_number : 0;
-				return sum + value;
-			}, 0) / roundPicks.length;
+		// Calculate analytics
+		const positionBreakdown: Record<string, number> = {};
+		const pickContextStats: Record<string, number> = { early: 0, average: 0, late: 0 };
+		const roundAnalysis: Array<{ round: number; picks: number; avgPositionValue: number }> = [];
 
-		roundAnalysis.push({
-			round: parseInt(round),
-			picks: roundPicks.length,
-			avgPositionValue: avgValue
+		// Process picks for analytics
+		picks.forEach((pick) => {
+			// Position breakdown - fix FLEX issue
+			let position = pick.player_position;
+			if (!position || position === 'FLEX' || position === '') {
+				position = 'UNKNOWN';
+			}
+			positionBreakdown[position] = (positionBreakdown[position] || 0) + 1;
+
+			// Pick context stats (only for platforms that have this data)
+			if (pick.pick_context) {
+				pickContextStats[pick.pick_context] = (pickContextStats[pick.pick_context] || 0) + 1;
+			}
 		});
-	});
 
-	// Generate insights based on recent picks (last 10)
+		// Round analysis
+		const picksByRound: Record<number, DraftPick[]> = {};
+		picks.forEach((pick) => {
+			if (!picksByRound[pick.round_number]) {
+				picksByRound[pick.round_number] = [];
+			}
+			picksByRound[pick.round_number].push(pick);
+		});
 
-	const recentPicks = (picks || []).slice(-10);
-	const insights = generateLiveInsights(recentPicks, picks || []);
+		Object.entries(picksByRound).forEach(([round, roundPicks]) => {
+			const avgValue =
+				roundPicks.reduce((sum, pick) => {
+					const value = pick.avg_position_pick ? pick.avg_position_pick - pick.pick_number : 0;
+					return sum + value;
+				}, 0) / roundPicks.length;
 
-	return json({
-		positionBreakdown,
-		pickContextStats,
-		roundAnalysis: roundAnalysis.sort((a, b) => a.round - b.round),
-		insights,
-		totalPicks: picks?.length || 0,
-		lastUpdated: new Date().toISOString()
-	});
+			roundAnalysis.push({
+				round: parseInt(round),
+				picks: roundPicks.length,
+				avgPositionValue: avgValue
+			});
+		});
+
+		// Generate insights based on recent picks (last 10)
+		const recentPicks = picks.slice(-10);
+		const insights = generateLiveInsights(recentPicks, picks);
+
+		return json({
+			positionBreakdown,
+			pickContextStats,
+			roundAnalysis: roundAnalysis.sort((a, b) => a.round - b.round),
+			insights,
+			totalPicks: picks.length,
+			lastUpdated: new Date().toISOString(),
+			platform // Include platform info for debugging
+		});
+	} catch (e) {
+		console.error('Error in live-insights endpoint:', e);
+		return json(
+			{
+				positionBreakdown: {},
+				pickContextStats: { early: 0, average: 0, late: 0 },
+				roundAnalysis: [],
+				insights: [],
+				totalPicks: 0,
+				error: e instanceof Error ? e.message : 'Unknown error'
+			},
+			{ status: 500 }
+		);
+	}
 };
 
-function generateLiveInsights(recentPicks: RecentPick[], allPicks: RecentPick[]) {
-	const insights = [];
+function generateLiveInsights(recentPicks: DraftPick[], allPicks: DraftPick[]): LiveInsight[] {
+	const insights: LiveInsight[] = [];
 
 	// Check for position runs
 	if (recentPicks.length >= 4) {

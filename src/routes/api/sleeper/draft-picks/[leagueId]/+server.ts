@@ -8,49 +8,94 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 
 	const { leagueId } = params;
 
-	const { data: picks, error: dbError } = await locals.supabase
-		.from('sleeper_draft_picks')
-		.select(
+	try {
+		// Get picks first - based on actual schema columns
+		const { data: picks, error: dbError } = await locals.supabase
+			.from('sleeper_draft_picks')
+			.select(
+				`
+				pick_number,
+				round_number,
+				pick_in_round,
+				player_name,
+				player_position,
+				player_nfl_team,
+				roster_id,
+				sleeper_player_id,
+				timestamp
 			`
-			pick_number,
-			round_number,
-			pick_in_round,
-			player_name,
-			player_position,
-			player_nfl_team,
-			pick_context,
-			position_rank,
-			avg_position_pick,
-			timestamp,
-			sleeper_teams!inner (
-				team_name,
-				owner_name
 			)
-		`
-		)
-		.eq('league_id', leagueId)
-		.order('pick_number', { ascending: true });
+			.eq('league_id', leagueId)
+			.order('pick_number', { ascending: true });
 
-	if (dbError) {
-		console.error('Database error:', dbError);
-		throw error(500, 'Failed to fetch draft picks');
+		if (dbError) {
+			console.error('Database error:', dbError);
+			throw error(500, `Failed to fetch draft picks: ${dbError.message}`);
+		}
+
+		// Get teams separately since there's no direct FK relationship
+		const { data: teams, error: teamsError } = await locals.supabase
+			.from('sleeper_teams')
+			.select(
+				`
+				sleeper_roster_id,
+				owner_name
+			`
+			)
+			.eq('league_id', leagueId);
+
+		if (teamsError) {
+			console.warn('Could not fetch teams:', teamsError);
+		}
+
+		// Create a roster_id to team mapping
+		const teamMap = new Map();
+		(teams || []).forEach((team) => {
+			teamMap.set(team.sleeper_roster_id, {
+				team_name: team.owner_name || `Team ${team.sleeper_roster_id}`, // Use owner_name as team_name
+				owner_name: team.owner_name || 'Unknown Owner'
+			});
+		});
+
+		// Transform the data
+		const transformedPicks = (picks || []).map((pick) => {
+			const teamInfo = teamMap.get(pick.roster_id) || {
+				team_name: `Team ${pick.roster_id}`,
+				owner_name: 'Unknown Owner'
+			};
+
+			// Fix position mapping - ensure it's not defaulting to FLEX
+			let position = pick.player_position;
+			if (!position || position === 'FLEX' || position === '') {
+				position = 'UNKNOWN';
+			}
+
+			return {
+				pick_number: pick.pick_number,
+				round_number: pick.round_number,
+				pick_in_round: pick.pick_in_round,
+				player_name: pick.player_name || 'Unknown Player',
+				player_position: position,
+				player_nfl_team: pick.player_nfl_team,
+				pick_context: 'average', // Default since column doesn't exist
+				position_rank: 0, // Default since not available
+				avg_position_pick: null, // Not available in current schema
+				timestamp: pick.timestamp || new Date().toISOString(),
+				team_name: teamInfo.team_name,
+				owner_name: teamInfo.owner_name
+			};
+		});
+
+		console.log(`Found ${transformedPicks.length} picks for league ${leagueId}`);
+		return json({ picks: transformedPicks });
+	} catch (e) {
+		console.error('Error in sleeper draft-picks endpoint:', e);
+		return json(
+			{
+				picks: [],
+				error: e instanceof Error ? e.message : 'Unknown error'
+			},
+			{ status: 500 }
+		);
 	}
-
-	// Transform the data to flatten the team information
-	const transformedPicks = (picks || []).map((pick) => ({
-		pick_number: pick.pick_number,
-		round_number: pick.round_number,
-		pick_in_round: pick.pick_in_round,
-		player_name: pick.player_name,
-		player_position: pick.player_position,
-		player_nfl_team: pick.player_nfl_team,
-		pick_context: pick.pick_context,
-		position_rank: pick.position_rank,
-		avg_position_pick: pick.avg_position_pick,
-		timestamp: pick.timestamp,
-		team_name: pick.sleeper_teams?.[0]?.team_name || 'Unknown Team',
-		owner_name: pick.sleeper_teams?.[0]?.owner_name || 'Unknown Owner'
-	}));
-
-	return json({ picks: transformedPicks });
 };
