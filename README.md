@@ -8,6 +8,8 @@ Local-first fantasy football tooling focused first on reliable ESPN live-draft s
 
 - Automatic ESPN draft capture from the complete Pick History in the draft-room DOM
 - Safe live-draft snapshot reset between mocks without deleting player intelligence or league data
+- Confirmed one-click draft requests from recommendation cards through the bundled extension (exact visible-player verification)
+- Ten-second authoritative extension heartbeat to distinguish a quiet draft from a disconnected sync
 - No manual debugger attachment required for normal synchronization
 - Persistent extension delivery queue with manual retry and exportable diagnostic captures
 - Local SvelteKit receiver protected by a pairing token

@@ -4,6 +4,8 @@ This is the active unpacked Chrome extension for the local Fantasy Football Draf
 
 It reads ESPN's complete Pick History from the draft-room DOM, reconciles the full draft after every change, and forwards snapshots to the local SvelteKit receiver. Normal synchronization does not require Chrome debugger attachment. Optional network diagnostics exist only for troubleshooting.
 
+When the local dashboard shows that you are on the clock, its recommendation cards can also request a draft click. The content script verifies the exact visible player name and ESPN's enabled Draft button before clicking; it fails closed if either is missing or ambiguous.
+
 ## Load unpacked
 
 1. Start the main application with `pnpm dev` from the repository root.

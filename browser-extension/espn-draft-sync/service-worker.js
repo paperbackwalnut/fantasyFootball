@@ -35,6 +35,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       await record("dom_snapshot", { ...snapshot, url: sanitizeUrl(snapshot.url) });
       return { ok: true };
     },
+    CHECK_DRAFT_COMMAND: () => checkDraftCommand(),
+    REPORT_DRAFT_COMMAND: () => reportDraftCommand(message.result),
     CLEAR_CAPTURE: async () => {
       pending.splice(0, pending.length);
       await chrome.storage.local.set({ observations: [], pendingDelivery: [], delivery: null });
@@ -266,6 +268,25 @@ async function flush() {
     await persistPending();
     await setDelivery(false, String(error));
   }
+}
+
+async function checkDraftCommand() {
+  const { settings = DEFAULT_SETTINGS } = await chrome.storage.local.get('settings');
+  if (!settings.endpoint || !settings.token) return { command: null };
+  const response = await fetch(commandEndpoint(settings.endpoint), { headers: { 'x-espn-sync-token': settings.token } });
+  if (!response.ok) return { command: null };
+  return response.json();
+}
+
+async function reportDraftCommand(result) {
+  const { settings = DEFAULT_SETTINGS } = await chrome.storage.local.get('settings');
+  if (!settings.endpoint || !settings.token || !result) return { ok: false };
+  await fetch(commandEndpoint(settings.endpoint), { method: 'POST', headers: { 'content-type': 'application/json', 'x-espn-sync-token': settings.token }, body: JSON.stringify(result) });
+  return { ok: true };
+}
+
+function commandEndpoint(endpoint) {
+  return endpoint.replace(/\/events\/?(?:\?.*)?$/, '/commands');
 }
 
 async function setDelivery(ok, error) {

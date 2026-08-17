@@ -14,7 +14,8 @@
 		"lint": "prettier --check . && eslint .",
 		"test:sync": "node --test src/lib/server/espn-sync/draft-state.test.js src/lib/server/espn-sync/league-context.test.js src/lib/server/db/secrets.test.js src/lib/server/player-sources/csv.test.js src/lib/server/player-sources/adp.test.js src/lib/server/recommendations.test.js",
 		"test:db-security": "node scripts/verify-local-security.mjs",
-		"replay:sync": "node scripts/replay-espn-capture.mjs"
+		"replay:sync": "node scripts/replay-espn-capture.mjs",
+		"postmortem:draft": "node scripts/draft-postmortem.mjs"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^1.2.5",

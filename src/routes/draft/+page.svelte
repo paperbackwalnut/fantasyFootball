@@ -7,7 +7,7 @@
 	};
 	type Team = { id: string; name: string; picks: Pick[] };
 	type AvailablePlayer = { id: string; catalogId: string | null; name: string; position?: string | null; nflTeam: string | null; consensusRank?: number | null; positionRank?: number | null; tier?: number | null; adp?: number | null; minPick?: number | null; maxPick?: number | null; projectedPoints?: number | null; projectionSource?: string | null; injuryStatus?: string | null };
-	type Recommendation = AvailablePlayer & { recommendationRank: number; recommendationScore: number; availabilityRisk: number; reasons: string[] };
+	type Recommendation = AvailablePlayer & { recommendationRank: number; recommendationScore: number; availabilityRisk: number; reasons: string[]; scoreComponents: Record<string, number> };
 	type DraftState = {
 		updatedAt: string; currentPick: number | null; completed: boolean; userIsOnTheClock: boolean;
 		sync: { source: string; status: string; pickCount: number; resolvedCount: number; unresolvedCount: number };
@@ -32,6 +32,8 @@
 	let projectionMessage = $state('');
 	let importingProjections = $state(false);
 	let clearingDraft = $state(false);
+	let draftCommandPlayer = $state('');
+	let draftCommandMessage = $state('');
 
 	const recentPicks = $derived(draft?.picks.slice(-12).reverse() ?? []);
 	const unresolved = $derived(draft?.picks.filter((pick) => !pick.playerId) ?? []);
@@ -116,6 +118,22 @@
 		}
 	}
 
+	async function draftPlayer(player: Recommendation) {
+		if (!confirm(`Send ESPN's Draft click for ${player.name}?`)) return;
+		draftCommandPlayer = player.catalogId ?? player.name;
+		draftCommandMessage = '';
+		try {
+			const response = await fetch('/api/sync/espn/commands', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ playerId: player.id?.startsWith('catalog:') ? null : player.id, playerName: player.name }) });
+			const payload = await response.json().catch(() => ({}));
+			if (!response.ok) throw new Error(payload.message ?? `Draft command returned ${response.status}`);
+			draftCommandMessage = `Sent ${player.name} to the ESPN extension.`;
+		} catch (cause) {
+			draftCommandMessage = cause instanceof Error ? cause.message : 'Could not send the draft command';
+		} finally {
+			draftCommandPlayer = '';
+		}
+	}
+
 	onMount(() => {
 		void refresh();
 		const poll = setInterval(() => void refresh(), 1500);
@@ -189,10 +207,11 @@
 
 		<section class="rounded-xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm">
 			<div class="flex flex-wrap items-start justify-between gap-3"><div><div class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Independent pick advisor</div><h2 class="mt-1 text-xl font-bold text-indigo-950">Best options right now</h2><p class="mt-1 text-xs text-indigo-800">Explainable blend of consensus value, ADP, tiers, roster need, injury risk, and next-turn availability.</p></div>{#if draft.context.nextUserPick}<div class="rounded-lg bg-white px-3 py-2 text-xs text-gray-600">Planning through pick <strong>{draft.context.nextUserPick}</strong></div>{/if}</div>
+			{#if draftCommandMessage}<p class="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-indigo-900">{draftCommandMessage}</p>{/if}
 			{#if draft.recommendations?.length}
 				<div class="mt-4 grid gap-3 lg:grid-cols-3">
 					{#each draft.recommendations.slice(0, 6) as player}
-						<div class="rounded-xl border border-indigo-100 bg-white p-4"><div class="flex items-start gap-3"><span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-700 text-sm font-bold text-white">{player.recommendationRank}</span><div class="min-w-0 flex-1"><div class="truncate font-bold">{player.name}</div><div class="text-xs text-gray-500">{player.position ?? '—'} · {player.nflTeam ?? 'FA'} · ECR {player.consensusRank?.toFixed(1) ?? '—'} · ADP {player.adp?.toFixed(1) ?? '—'}</div></div></div><ul class="mt-3 space-y-1 text-xs text-gray-700">{#each player.reasons as reason}<li>• {reason}</li>{/each}</ul>{#if draft.context.nextUserPick && draft.context.nextUserPick > draft.context.currentPick}<div class="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100" title={`${player.availabilityRisk}% estimated chance gone`}><div class="h-full bg-amber-500" style={`width: ${player.availabilityRisk}%`}></div></div><div class="mt-1 text-[11px] text-gray-500">{player.availabilityRisk}% estimated chance gone by next turn</div>{/if}</div>
+						<div class="rounded-xl border border-indigo-100 bg-white p-4"><div class="flex items-start gap-3"><span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-700 text-sm font-bold text-white">{player.recommendationRank}</span><div class="min-w-0 flex-1"><div class="truncate font-bold">{player.name}</div><div class="text-xs text-gray-500">{player.position ?? '—'} · {player.nflTeam ?? 'FA'} · ECR {player.consensusRank?.toFixed(1) ?? '—'} · ADP {player.adp?.toFixed(1) ?? '—'}</div></div></div><ul class="mt-3 space-y-1 text-xs text-gray-700">{#each player.reasons as reason}<li>• {reason}</li>{/each}</ul><details class="mt-2 text-[11px] text-gray-500"><summary class="cursor-pointer">Score {player.recommendationScore.toFixed(1)} breakdown</summary><div class="mt-1 flex flex-wrap gap-x-2">{#each Object.entries(player.scoreComponents) as [label, value]}<span>{label} {value >= 0 ? '+' : ''}{value}</span>{/each}</div></details>{#if draft.context.nextUserPick && draft.context.nextUserPick > draft.context.currentPick}<div class="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100" title={`${player.availabilityRisk}% estimated chance gone`}><div class="h-full bg-amber-500" style={`width: ${player.availabilityRisk}%`}></div></div><div class="mt-1 text-[11px] text-gray-500">{player.availabilityRisk}% estimated chance gone by next turn</div>{/if}{#if draft.userIsOnTheClock}<button type="button" onclick={() => draftPlayer(player)} disabled={Boolean(draftCommandPlayer)} class="mt-3 w-full rounded-lg bg-indigo-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{draftCommandPlayer === (player.catalogId ?? player.name) ? 'Sending…' : `Draft ${player.name}`}</button>{/if}</div>
 					{/each}
 				</div>
 			{:else}<p class="mt-4 rounded-lg bg-white p-4 text-sm text-gray-600">Recommendations appear during an active draft after rankings are loaded.</p>{/if}

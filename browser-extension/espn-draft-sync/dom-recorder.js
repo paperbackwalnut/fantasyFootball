@@ -64,6 +64,7 @@ const historyTabNames = new Set(['Pick History', 'Auction Summary', 'Draft Summa
 let reconcileBusy = false;
 let reconcileFingerprint = '';
 let reconcileTimer = null;
+let lastReconcileSentAt = 0;
 
 const tidy = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
 
@@ -144,10 +145,12 @@ async function reconcile() {
     }
     const snapshot = fullDraftState();
     const fingerprint = JSON.stringify(snapshot);
+	const heartbeatDue = Date.now() - lastReconcileSentAt >= 10000;
     if ((snapshot.historyPicks.length || snapshot.activityPicks.length)
-        && fingerprint !== reconcileFingerprint) {
+        && (fingerprint !== reconcileFingerprint || heartbeatDue)) {
       reconcileFingerprint = fingerprint;
       await chrome.runtime.sendMessage({ type: 'DOM_SNAPSHOT', snapshot }).catch(() => {});
+      lastReconcileSentAt = Date.now();
     }
   } finally {
     originalTab?.click();
@@ -170,3 +173,48 @@ window.addEventListener('online', () => scheduleReconcile(0));
 window.addEventListener('pageshow', () => scheduleReconcile(0));
 scheduleReconcile(1000);
 setInterval(() => void reconcile(), 3000);
+
+let lastDraftCommand = null;
+async function checkDraftCommand() {
+  const response = await chrome.runtime.sendMessage({ type: 'CHECK_DRAFT_COMMAND' }).catch(() => null);
+  const command = response?.command;
+  if (!command || command.id === lastDraftCommand) return;
+  lastDraftCommand = command.id;
+  const result = await executeDraftCommand(command);
+  await chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_COMMAND', result: { commandId: command.id, ...result } }).catch(() => {});
+}
+
+async function executeDraftCommand(command) {
+  if (command.type !== 'draft-player') return { ok: false, message: 'Unsupported command' };
+  if (!/you are on the clock/i.test(tidy(document.querySelector('.pickArea h3')))) return { ok: false, message: 'ESPN does not show you on the clock' };
+  const normalize = (value) => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  let names = [...document.querySelectorAll('.playerinfo__playername, .player-column__athlete')];
+  let matches = names.filter((element) => normalize(tidy(element)) === normalize(command.playerName));
+	if (!matches.length) {
+		const search = [...document.querySelectorAll('input')].find((input) => /search/i.test(input.placeholder ?? '') || /search/i.test(input.getAttribute('aria-label') ?? ''));
+		if (search) {
+			const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+			setter?.call(search, command.playerName);
+			search.dispatchEvent(new Event('input', { bubbles: true }));
+			search.dispatchEvent(new Event('change', { bubbles: true }));
+			await new Promise((resolve) => setTimeout(resolve, 500));
+			names = [...document.querySelectorAll('.playerinfo__playername, .player-column__athlete')];
+			matches = names.filter((element) => normalize(tidy(element)) === normalize(command.playerName));
+		}
+	}
+  if (command.playerId) {
+    const byId = names.filter((element) => espnPlayerId(element.closest('[data-player-id], [data-playerid], [data-athlete-id], tr, [role="row"]') ?? element) === String(command.playerId));
+    if (byId.length === 1) matches = byId;
+  }
+  if (matches.length !== 1) return { ok: false, message: matches.length ? 'Player row was ambiguous' : 'Player is not visible in ESPN; search or filter the player list first' };
+  const row = matches[0].closest('[data-player-id], [data-playerid], [data-athlete-id], .player-row, tr, [role="row"], .Table2__tr') ?? matches[0];
+  row.scrollIntoView({ block: 'center' });
+  row.click();
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const buttons = [...document.querySelectorAll('button')].filter((button) => !button.disabled && /^(draft|draft player)$/i.test(tidy(button)));
+  if (buttons.length !== 1) return { ok: false, message: buttons.length ? 'ESPN Draft button was ambiguous' : 'ESPN Draft button was not found after selecting the player' };
+  buttons[0].click();
+  return { ok: true, message: `Draft click sent for ${command.playerName}` };
+}
+
+setInterval(() => void checkDraftCommand(), 1000);
