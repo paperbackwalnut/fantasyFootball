@@ -26,6 +26,7 @@ Local-first fantasy football tooling focused first on reliable ESPN live-draft s
 - Injury and breaking-news ingestion
 - Depth-chart and handcuff relationships
 - League-aware recommendation scoring
+- Source-neutral season projection CSV import (working; provider feed selection remains open)
 
 ### Planned
 

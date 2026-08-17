@@ -6,7 +6,7 @@
 		playerName: string; position: string | null; nflTeam: string | null; matchConfidence: string;
 	};
 	type Team = { id: string; name: string; picks: Pick[] };
-	type AvailablePlayer = { id: string; catalogId: string | null; name: string; position?: string | null; nflTeam: string | null; consensusRank?: number | null; positionRank?: number | null; tier?: number | null; adp?: number | null; minPick?: number | null; maxPick?: number | null; injuryStatus?: string | null };
+	type AvailablePlayer = { id: string; catalogId: string | null; name: string; position?: string | null; nflTeam: string | null; consensusRank?: number | null; positionRank?: number | null; tier?: number | null; adp?: number | null; minPick?: number | null; maxPick?: number | null; projectedPoints?: number | null; projectionSource?: string | null; injuryStatus?: string | null };
 	type DraftState = {
 		updatedAt: string; currentPick: number | null; completed: boolean; userIsOnTheClock: boolean;
 		sync: { source: string; status: string; pickCount: number; resolvedCount: number; unresolvedCount: number };
@@ -26,6 +26,10 @@
 	let now = $state(new Date());
 	let refreshingPlayers = $state(false);
 	let playerRefreshMessage = $state('');
+	let projectionFile = $state<File | null>(null);
+	let projectionSource = $state('');
+	let projectionMessage = $state('');
+	let importingProjections = $state(false);
 
 	const recentPicks = $derived(draft?.picks.slice(-12).reverse() ?? []);
 	const unresolved = $derived(draft?.picks.filter((pick) => !pick.playerId) ?? []);
@@ -70,6 +74,28 @@
 			playerRefreshMessage = cause instanceof Error ? cause.message : 'Player refresh failed';
 		} finally {
 			refreshingPlayers = false;
+		}
+	}
+
+	async function importProjections() {
+		if (!projectionFile) return;
+		importingProjections = true;
+		projectionMessage = '';
+		try {
+			const form = new FormData();
+			form.set('file', projectionFile);
+			form.set('source', projectionSource || projectionFile.name.replace(/\.csv$/i, ''));
+			form.set('seasonYear', String(draft?.context.seasonYear ?? new Date().getFullYear()));
+			form.set('scoringFormat', 'PPR');
+			const response = await fetch('/api/player-intelligence/projections', { method: 'POST', body: form });
+			const payload = await response.json();
+			if (!response.ok) throw new Error(payload.message ?? 'Import failed');
+			projectionMessage = `${payload.imported}/${payload.rows} projections matched${payload.unmatched ? ` · ${payload.unmatched} unmatched` : ''}`;
+			await refresh();
+		} catch (cause) {
+			projectionMessage = cause instanceof Error ? cause.message : 'Projection import failed';
+		} finally {
+			importingProjections = false;
 		}
 	}
 
@@ -144,6 +170,16 @@
 			</div>
 		</section>
 
+		<section class="rounded-xl border bg-white p-5 shadow-sm">
+			<div class="flex flex-wrap items-end gap-3">
+				<div class="mr-auto"><div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Season projections</div><p class="mt-1 text-sm text-gray-600">Import a source-neutral CSV; player names are matched conservatively. <a class="text-blue-600 underline" href="/api/player-intelligence/projections?template=1">Download template</a></p></div>
+				<input aria-label="Projection source" bind:value={projectionSource} placeholder="Source name" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+				<input aria-label="Projection CSV file" type="file" accept=".csv,text/csv" onchange={(event) => projectionFile = event.currentTarget.files?.[0] ?? null} class="max-w-xs text-sm" />
+				<button type="button" onclick={importProjections} disabled={!projectionFile || importingProjections} class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{importingProjections ? 'Importing…' : 'Import projections'}</button>
+			</div>
+			{#if projectionMessage}<p class="mt-2 text-xs text-gray-600">{projectionMessage}</p>{/if}
+		</section>
+
 		<div class="grid gap-6 xl:grid-cols-[1.05fr_1.4fr]">
 			<section class="rounded-xl border bg-white shadow-sm">
 				<div class="border-b px-5 py-4"><h2 class="font-bold">Recent selections</h2><p class="text-xs text-gray-500">Most recent first</p></div>
@@ -179,7 +215,7 @@
 			<section class="rounded-xl border bg-white shadow-sm">
 				<div class="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4"><div><h2 class="font-bold">Ranked available players</h2><p class="text-xs text-gray-500">2026 PPR consensus and {draft.context.teamCount}-team recent ADP · showing 100</p></div><input aria-label="Search available players" bind:value={search} placeholder="Search name, position, or NFL team" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" /></div>
 				<div class="max-h-96 overflow-auto divide-y">
-					{#each filteredAvailable as player}<div class="grid grid-cols-[2.6rem_1fr_auto_auto] items-center gap-3 px-5 py-2.5 text-sm"><span class="font-bold text-gray-400">{player.consensusRank ? `#${Math.round(player.consensusRank)}` : '—'}</span><div><div class="font-medium">{player.name}{#if player.injuryStatus}<span class="ml-2 text-xs font-semibold text-red-600">{player.injuryStatus}</span>{/if}</div><div class="text-xs text-gray-500">{player.position ?? '—'} · {player.nflTeam ?? 'FA'}{player.tier ? ` · Tier ${player.tier}` : ''}</div></div><div class="text-right"><div class="text-xs text-gray-400">ADP</div><div class="font-semibold">{player.adp ? player.adp.toFixed(1) : '—'}</div></div><div class="w-20 text-right text-xs text-gray-500">{player.minPick && player.maxPick ? `${player.minPick}–${player.maxPick}` : 'no range'}</div></div>{/each}
+					{#each filteredAvailable as player}<div class="grid grid-cols-[2.6rem_1fr_auto_auto_auto] items-center gap-3 px-5 py-2.5 text-sm"><span class="font-bold text-gray-400">{player.consensusRank ? `#${Math.round(player.consensusRank)}` : '—'}</span><div><div class="font-medium">{player.name}{#if player.injuryStatus}<span class="ml-2 text-xs font-semibold text-red-600">{player.injuryStatus}</span>{/if}</div><div class="text-xs text-gray-500">{player.position ?? '—'} · {player.nflTeam ?? 'FA'}{player.tier ? ` · Tier ${player.tier}` : ''}</div></div><div class="text-right"><div class="text-xs text-gray-400">Proj</div><div class="font-semibold">{player.projectedPoints?.toFixed(1) ?? '—'}</div></div><div class="text-right"><div class="text-xs text-gray-400">ADP</div><div class="font-semibold">{player.adp ? player.adp.toFixed(1) : '—'}</div></div><div class="w-20 text-right text-xs text-gray-500">{player.minPick && player.maxPick ? `${player.minPick}–${player.maxPick}` : 'no range'}</div></div>{/each}
 				</div>
 			</section>
 
