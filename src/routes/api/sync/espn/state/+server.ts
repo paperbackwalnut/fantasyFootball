@@ -3,6 +3,7 @@ import { getDatabase } from '$lib/server/db/database';
 import { deriveLeagueContext } from '$lib/server/espn-sync/league-context.js';
 import { intelligenceSummary, learnDraftedPlayerPositions, rankedAvailablePlayers } from '$lib/server/player-intelligence';
 import { recommendPlayers } from '$lib/server/recommendations.js';
+import { analyzeDraftMarket } from '$lib/server/draft-market.js';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
@@ -16,9 +17,10 @@ export const GET: RequestHandler = async () => {
 	const importedLeague = externalId ? getDatabase().prepare('SELECT * FROM leagues WHERE platform=? AND external_id=? AND season_year=?').get('ESPN', externalId, seasonYear) : null;
 	const context = draft ? deriveLeagueContext(draft, importedLeague) : null;
 	const rankedAvailable = draft && context ? rankedAvailablePlayers(seasonYear, context.teamCount || 10, draft.picks) : [];
-	const recommendations = context ? recommendPlayers(rankedAvailable, context) : [];
+	const market = analyzeDraftMarket(draft?.picks ?? []);
+	const recommendations = context ? recommendPlayers(rankedAvailable, context, market) : [];
 	return json(
-		{ state: draft ? { ...draft, availablePlayers: rankedAvailable.length ? rankedAvailable : draft.availablePlayers, recommendations, context, intelligence: intelligenceSummary(seasonYear) } : null, receiver },
+		{ state: draft ? { ...draft, availablePlayers: rankedAvailable.length ? rankedAvailable : draft.availablePlayers, recommendations, market, context, intelligence: intelligenceSummary(seasonYear) } : null, receiver },
 		{ headers: { 'cache-control': 'no-store', 'access-control-allow-origin': '*' } }
 	);
 };

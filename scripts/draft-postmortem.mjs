@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { recommendPlayers } from '../src/lib/server/recommendations.js';
+import { analyzeDraftMarket } from '../src/lib/server/draft-market.js';
 import { normalizePlayerName } from '../src/lib/server/espn-sync/draft-state.js';
 
 const db = new Database('.data/fantasy-football.sqlite', { readonly: true });
@@ -25,7 +26,7 @@ for (const chosen of myPicks) {
 	const rosterCounts = {};
 	for (const pick of prior.filter((pick) => String(pick.teamId) === String(userTeamId))) rosterCounts[pick.position ?? 'UNKNOWN'] = (rosterCounts[pick.position ?? 'UNKNOWN'] ?? 0) + 1;
 	const next = myPicks.find((pick) => pick.pickNumber > chosen.pickNumber)?.pickNumber ?? null;
-	const advice = recommendPlayers(available, { currentPick: chosen.pickNumber, nextUserPick: next, teamCount, rosterCounts, completed: false });
+	const advice = recommendPlayers(available, { currentPick: chosen.pickNumber, nextUserPick: next, teamCount, rosterCounts, completed: false }, analyzeDraftMarket(prior));
 	const pickedValue = values.find((player) => player.catalogId === chosen.catalogId || normalizePlayerName(player.name) === normalizePlayerName(chosen.playerName));
 	const advised = advice.find((player) => player.catalogId === chosen.catalogId || normalizePlayerName(player.name) === normalizePlayerName(chosen.playerName));
 	report.push({ pick: chosen.pickNumber, round: chosen.round, chosen: chosen.playerName, position: chosen.position, ecr: pickedValue?.consensusRank ?? null, adp: pickedValue?.adp ?? null, advisorRank: advised?.recommendationRank ?? null, rosterBefore: rosterCounts, topOptions: advice.slice(0, 5).map((player) => ({ name: player.name, position: player.position, ecr: player.consensusRank, adp: player.adp, score: player.recommendationScore, reasons: player.reasons })) });

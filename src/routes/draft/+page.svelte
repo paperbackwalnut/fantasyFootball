@@ -8,10 +8,11 @@
 	type Team = { id: string; name: string; picks: Pick[] };
 	type AvailablePlayer = { id: string; catalogId: string | null; name: string; position?: string | null; nflTeam: string | null; consensusRank?: number | null; positionRank?: number | null; tier?: number | null; adp?: number | null; minPick?: number | null; maxPick?: number | null; projectedPoints?: number | null; projectionSource?: string | null; injuryStatus?: string | null };
 	type Recommendation = AvailablePlayer & { recommendationRank: number; recommendationScore: number; availabilityRisk: number; reasons: string[]; scoreComponents: Record<string, number> };
+	type MarketSignal = { position: string; active: boolean; lastSix: number; lastTen: number; consecutive: number; overallCount: number; demandMultiple: number; intensity: number };
 	type DraftState = {
 		updatedAt: string; currentPick: number | null; completed: boolean; userIsOnTheClock: boolean;
 		sync: { source: string; status: string; pickCount: number; resolvedCount: number; unresolvedCount: number };
-		picks: Pick[]; teams: Team[]; availablePlayers: AvailablePlayer[]; recommendations: Recommendation[];
+		picks: Pick[]; teams: Team[]; availablePlayers: AvailablePlayer[]; recommendations: Recommendation[]; market: { sampleSize: number; windowSize: number; summary: string; activeRuns: MarketSignal[]; signals: MarketSignal[] };
 		context: { leagueId: string | null; seasonYear: number; userTeamId: string | null; userTeamName: string | null; teamCount: number; draftSlot: number | null; currentPick: number; completed: boolean; nextUserPick: number | null; picksUntilNextTurn: number | null; scoring: { format: string; receptionPoints: number | null }; settingsSource: string; rosterCounts: Record<string, number>; needsLeagueImport: boolean; userTeamDetected: boolean };
 		intelligence: { catalog: { total: number; active: number; positioned: number; withBye: number }; valueSources: Array<{ source: string; count: number; updatedAt: string }>; news: { count: number; updatedAt: string | null } };
 	};
@@ -207,6 +208,7 @@
 
 		<section class="rounded-xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm">
 			<div class="flex flex-wrap items-start justify-between gap-3"><div><div class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Independent pick advisor</div><h2 class="mt-1 text-xl font-bold text-indigo-950">Best options right now</h2><p class="mt-1 text-xs text-indigo-800">Explainable blend of consensus value, ADP, tiers, roster need, injury risk, and next-turn availability.</p></div>{#if draft.context.nextUserPick}<div class="rounded-lg bg-white px-3 py-2 text-xs text-gray-600">Planning through pick <strong>{draft.context.nextUserPick}</strong></div>{/if}</div>
+			<div class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-xs"><strong class="text-indigo-900">Room trend:</strong><span class="text-gray-700">{draft.market?.summary ?? 'Collecting picks'}</span>{#each (draft.market?.signals ?? []).slice(0, 3) as signal}<span class="rounded-full px-2 py-1" class:bg-amber-100={signal.active} class:text-amber-900={signal.active} class:bg-gray-100={!signal.active}>{signal.position} {signal.lastTen}/10 · {signal.demandMultiple}× room rate</span>{/each}</div>
 			{#if draftCommandMessage}<p class="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-indigo-900">{draftCommandMessage}</p>{/if}
 			{#if draft.recommendations?.length}
 				<div class="mt-4 grid gap-3 lg:grid-cols-3">

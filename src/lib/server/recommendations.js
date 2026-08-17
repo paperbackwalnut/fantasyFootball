@@ -3,10 +3,11 @@ const starterTargets = { QB: 1, RB: 2, WR: 2, TE: 1, DST: 1, K: 1 };
 
 /** @typedef {{name:string,position?:string|null,consensusRank?:number|null,adp?:number|null,tier?:number|null,projectedPoints?:number|null,injuryStatus?:string|null,[key:string]:unknown}} Candidate */
 /** @typedef {{completed?:boolean,currentPick?:number,nextUserPick?:number|null,teamCount?:number,rosterCounts?:Record<string,number>,rosterSlots?:Record<string,number>}} DraftContext */
+/** @typedef {{signals?:Array<{position:string,active:boolean,intensity:number,lastSix:number,demandMultiple:number}>}} DraftMarket */
 
 /** Build an explainable shortlist from provider-neutral player signals. */
-/** @param {Candidate[]} players @param {DraftContext} context */
-export function recommendPlayers(players, context) {
+/** @param {Candidate[]} players @param {DraftContext} context @param {DraftMarket} [market] */
+export function recommendPlayers(players, context, market = {}) {
 	if (!context || context.completed || !players?.length) return [];
 	const currentPick = Number(context.currentPick) || 1;
 	const nextPick = Number(context.nextUserPick) || currentPick;
@@ -25,21 +26,24 @@ export function recommendPlayers(players, context) {
 		const urgency = goneBeforeNext * 15;
 		const nextAtPosition = pool.slice(index + 1).find((candidate) => candidate.position === position);
 		const tierDrop = nextAtPosition?.tier != null && player.tier != null && nextAtPosition.tier > player.tier ? 8 : 0;
+		const run = market.signals?.find((signal) => signal.position === position && signal.active);
+		const marketRunBonus = run && rostered < Math.max(1, target) ? Math.round(run.intensity * 8 * 10) / 10 : 0;
 		const injuryPenalty = player.injuryStatus && !['Healthy', 'Active'].includes(player.injuryStatus) ? 13 : 0;
 		const earlySpecialistPenalty = ['K', 'DST'].includes(position) && round < Math.max(10, (context.teamCount || 10) - 1) ? 35 : 0;
 		const qbDepthPenalty = position === 'QB' && rostered >= 1 ? (round < 10 ? 38 : 24) : 0;
-		const rawScore = 110 - rank * 0.34 + value + adpValue + urgency + needBonus + tierDrop - injuryPenalty - earlySpecialistPenalty - qbDepthPenalty;
+		const rawScore = 110 - rank * 0.34 + value + adpValue + urgency + needBonus + tierDrop + marketRunBonus - injuryPenalty - earlySpecialistPenalty - qbDepthPenalty;
 		const reasons = [];
 		if (value >= 5) reasons.push(`${Math.round(value / 0.55)} picks past consensus value`);
 		if (needBonus >= 11) reasons.push(`fills a starting ${position} need`);
 		if (tierDrop) reasons.push(`${position} tier drops after this option`);
+		if (marketRunBonus && run) reasons.push(`${run.lastSix} ${position}s taken in the last 6 picks`);
 		if (goneBeforeNext >= 0.72 && nextPick > currentPick) reasons.push(`${Math.round(goneBeforeNext * 100)}% estimated chance gone by pick ${nextPick}`);
 		if (player.projectedPoints != null) reasons.push(`${Number(player.projectedPoints).toFixed(1)} projected PPR points`);
 		if (injuryPenalty) reasons.push(`${player.injuryStatus} injury risk applied`);
 		if (qbDepthPenalty) reasons.push(`${rostered} QB already rostered; backup cost applied`);
 		if (!reasons.length) reasons.push('best blended rank and roster fit');
 		return { ...player, recommendationScore: Math.round(rawScore * 10) / 10, availabilityRisk: Math.round(goneBeforeNext * 100), reasons: reasons.slice(0, 3), scoreComponents: {
-			consensus: roundScore(110 - rank * 0.34), value: roundScore(value), adpValue: roundScore(adpValue), availability: roundScore(urgency), rosterNeed: roundScore(needBonus), tierScarcity: roundScore(tierDrop), injury: roundScore(-injuryPenalty), rosterConstruction: roundScore(-earlySpecialistPenalty - qbDepthPenalty)
+			consensus: roundScore(110 - rank * 0.34), value: roundScore(value), adpValue: roundScore(adpValue), availability: roundScore(urgency), rosterNeed: roundScore(needBonus), tierScarcity: roundScore(tierDrop), roomTrend: roundScore(marketRunBonus), injury: roundScore(-injuryPenalty), rosterConstruction: roundScore(-earlySpecialistPenalty - qbDepthPenalty)
 		} };
 	}).sort((a, b) => b.recommendationScore - a.recommendationScore).slice(0, 12).map((player, index) => ({ ...player, recommendationRank: index + 1 }));
 }
