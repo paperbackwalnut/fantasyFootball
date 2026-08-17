@@ -1,4 +1,4 @@
-import { readCurrentDraftState, readSyncStatus } from '$lib/server/espn-sync/store';
+import { clearCurrentDraftState, readCurrentDraftState, readSyncStatus } from '$lib/server/espn-sync/store';
 import { getDatabase } from '$lib/server/db/database';
 import { deriveLeagueContext } from '$lib/server/espn-sync/league-context.js';
 import { intelligenceSummary, learnDraftedPlayerPositions, rankedAvailablePlayers } from '$lib/server/player-intelligence';
@@ -21,4 +21,8 @@ export const GET: RequestHandler = async () => {
 		{ state: draft ? { ...draft, availablePlayers: rankedAvailable.length ? rankedAvailable : draft.availablePlayers, recommendations, context, intelligence: intelligenceSummary(seasonYear) } : null, receiver },
 		{ headers: { 'cache-control': 'no-store', 'access-control-allow-origin': '*' } }
 	);
+};
+
+export const DELETE: RequestHandler = async () => {
+	return json(clearCurrentDraftState(), { headers: { 'cache-control': 'no-store' } });
 };

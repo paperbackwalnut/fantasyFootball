@@ -31,6 +31,7 @@
 	let projectionSource = $state('');
 	let projectionMessage = $state('');
 	let importingProjections = $state(false);
+	let clearingDraft = $state(false);
 
 	const recentPicks = $derived(draft?.picks.slice(-12).reverse() ?? []);
 	const unresolved = $derived(draft?.picks.filter((pick) => !pick.playerId) ?? []);
@@ -100,6 +101,21 @@
 		}
 	}
 
+	async function clearDraft() {
+		if (!confirm('Clear the saved ESPN live-draft snapshot? Rankings, ADP, leagues, and player data will be kept.')) return;
+		clearingDraft = true;
+		try {
+			const response = await fetch('/api/sync/espn/state', { method: 'DELETE' });
+			if (!response.ok) throw new Error(`Reset returned ${response.status}`);
+			draft = null;
+			error = '';
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'Could not clear the saved draft';
+		} finally {
+			clearingDraft = false;
+		}
+	}
+
 	onMount(() => {
 		void refresh();
 		const poll = setInterval(() => void refresh(), 1500);
@@ -124,10 +140,10 @@
 			<h1 class="text-3xl font-bold text-gray-950">Live Draft Command Center</h1>
 			<p class="mt-1 text-sm text-gray-500">SQLite-backed state from the automatic Chrome extension sync</p>
 		</div>
-		<div class="flex items-center gap-3 rounded-full border bg-white px-4 py-2 shadow-sm">
+		<div class="flex flex-wrap items-center justify-end gap-3"><button type="button" onclick={clearDraft} disabled={clearingDraft || !draft} class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm disabled:opacity-40">{clearingDraft ? 'Clearing…' : 'Clear previous draft'}</button><div class="flex items-center gap-3 rounded-full border bg-white px-4 py-2 shadow-sm">
 			<span class="h-2.5 w-2.5 rounded-full" class:bg-green-500={syncStatus === 'live'} class:bg-amber-500={syncStatus === 'stale' || syncStatus === 'waiting'} class:bg-red-500={syncStatus === 'offline'}></span>
 			<div><div class="text-sm font-semibold">{statusLabel()}</div><div class="text-xs text-gray-500">{secondsOld === null ? 'No observations yet' : `${secondsOld}s since update`}</div></div>
-		</div>
+		</div></div>
 	</header>
 
 	{#if error}

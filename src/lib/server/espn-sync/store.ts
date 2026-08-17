@@ -40,6 +40,11 @@ export async function readCurrentDraftState(): Promise<unknown | null> {
 	return upgraded;
 }
 
+export function clearCurrentDraftState() {
+	const result = getDatabase().prepare("DELETE FROM live_draft_state WHERE platform='ESPN'").run();
+	return { cleared: result.changes > 0 };
+}
+
 function isAuthoritativeSnapshot(observation: SyncObservation) {
 	if (observation.type !== 'dom_snapshot' || !observation.data || typeof observation.data !== 'object') return false;
 	const data = observation.data as { source?: unknown; historyPicks?: unknown };
