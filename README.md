@@ -25,13 +25,13 @@ Local-first fantasy football tooling focused first on reliable ESPN live-draft s
 - Additional ranking sources, ADP, and projections
 - Injury and breaking-news ingestion
 - Depth-chart and handcuff relationships
-- League-aware recommendation scoring
+- Explainable live recommendations blending ECR, ADP, tier scarcity, roster needs, availability risk, and injuries
 - Source-neutral season projection CSV import (working; provider feed selection remains open)
 
 ### Planned
 
 1. Import current rankings, ADP, projections, richer injury news, depth charts, and handcuff data into the normalized player-intelligence tables.
-2. Build live recommendations using value over replacement, positional tiers, roster needs, expected availability at the next pick, scoring rules, injury risk, and roster construction.
+2. Calibrate live recommendations with value over replacement, exact imported scoring rules, projection confidence, and historical backtests.
 3. Complete the ESPN league-import experience and validate custom scoring and lineup configurations.
 4. Add Sleeper live-draft synchronization after the ESPN workflow is stable.
 5. Build a weekly start/sit assistant using projections, matchups, injuries, and league rosters.
