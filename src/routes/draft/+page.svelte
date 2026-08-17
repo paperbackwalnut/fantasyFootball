@@ -64,7 +64,7 @@
 			const response = await fetch('/api/player-intelligence/refresh', { method: 'POST' });
 			const payload = await response.json();
 			if (!response.ok) throw new Error(payload.message ?? `Refresh returned ${response.status}`);
-			playerRefreshMessage = `${payload.sleeper.players.toLocaleString()} current players refreshed`;
+			playerRefreshMessage = `${payload.sleeper.players.toLocaleString()} players · ${payload.rankings.imported} PPR consensus ranks`;
 			await refresh();
 		} catch (cause) {
 			playerRefreshMessage = cause instanceof Error ? cause.message : 'Player refresh failed';
