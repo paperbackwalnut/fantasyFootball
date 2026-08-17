@@ -77,6 +77,11 @@ CREATE TABLE IF NOT EXISTS player_trends (
   activity_count INTEGER NOT NULL, fetched_at TEXT NOT NULL,
   PRIMARY KEY(player_id, source, trend_type, lookback_hours)
 );
+CREATE TABLE IF NOT EXISTS provider_player_ids (
+  player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL, provider_id TEXT NOT NULL,
+  updated_at TEXT NOT NULL, PRIMARY KEY(provider, provider_id), UNIQUE(player_id, provider)
+);
 `;
 
 export function getDatabase() {
@@ -90,6 +95,7 @@ export function getDatabase() {
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(1, ?)').run(new Date().toISOString());
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(2, ?)').run(new Date().toISOString());
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(3, ?)').run(new Date().toISOString());
+	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(4, ?)').run(new Date().toISOString());
 	return instance;
 }
 

@@ -6,7 +6,7 @@
 		playerName: string; position: string | null; nflTeam: string | null; matchConfidence: string;
 	};
 	type Team = { id: string; name: string; picks: Pick[] };
-	type AvailablePlayer = { id: string; catalogId: string | null; name: string; nflTeam: string | null };
+	type AvailablePlayer = { id: string; catalogId: string | null; name: string; position?: string | null; nflTeam: string | null; consensusRank?: number | null; positionRank?: number | null; tier?: number | null; adp?: number | null; minPick?: number | null; maxPick?: number | null; injuryStatus?: string | null };
 	type DraftState = {
 		updatedAt: string; currentPick: number | null; completed: boolean; userIsOnTheClock: boolean;
 		sync: { source: string; status: string; pickCount: number; resolvedCount: number; unresolvedCount: number };
@@ -32,7 +32,7 @@
 	const selectedRoster = $derived(draft?.teams.find((team) => team.id === selectedTeam) ?? null);
 	const filteredAvailable = $derived(
 		(draft?.availablePlayers ?? [])
-			.filter((player) => !search || `${player.name} ${player.nflTeam ?? ''}`.toLowerCase().includes(search.toLowerCase()))
+			.filter((player) => !search || `${player.name} ${player.position ?? ''} ${player.nflTeam ?? ''}`.toLowerCase().includes(search.toLowerCase()))
 			.slice(0, 100)
 	);
 	const lastUpdate = $derived(receiver?.lastObservationAt ? new Date(receiver.lastObservationAt) : null);
@@ -61,10 +61,10 @@
 		refreshingPlayers = true;
 		playerRefreshMessage = '';
 		try {
-			const response = await fetch('/api/player-intelligence/refresh', { method: 'POST' });
+			const response = await fetch('/api/player-intelligence/refresh', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ teamCount: draft?.context.teamCount ?? 10 }) });
 			const payload = await response.json();
 			if (!response.ok) throw new Error(payload.message ?? `Refresh returned ${response.status}`);
-			playerRefreshMessage = `${payload.sleeper.players.toLocaleString()} players · ${payload.rankings.imported} PPR consensus ranks`;
+			playerRefreshMessage = `${payload.sleeper.players.toLocaleString()} players · ${payload.rankings.imported} ranks · ${payload.adp.imported} ADPs (${payload.adp.totalDrafts} drafts)`;
 			await refresh();
 		} catch (cause) {
 			playerRefreshMessage = cause instanceof Error ? cause.message : 'Player refresh failed';
@@ -177,9 +177,9 @@
 
 		<div class="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
 			<section class="rounded-xl border bg-white shadow-sm">
-				<div class="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4"><div><h2 class="font-bold">Available player catalog</h2><p class="text-xs text-gray-500">Showing up to 100 matches</p></div><input aria-label="Search available players" bind:value={search} placeholder="Search name or NFL team" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" /></div>
+				<div class="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4"><div><h2 class="font-bold">Ranked available players</h2><p class="text-xs text-gray-500">2026 PPR consensus and {draft.context.teamCount}-team recent ADP · showing 100</p></div><input aria-label="Search available players" bind:value={search} placeholder="Search name, position, or NFL team" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" /></div>
 				<div class="max-h-96 overflow-auto divide-y">
-					{#each filteredAvailable as player}<div class="flex justify-between px-5 py-2.5 text-sm"><span class="font-medium">{player.name}</span><span class="text-gray-500">{player.nflTeam ?? 'FA'}</span></div>{/each}
+					{#each filteredAvailable as player}<div class="grid grid-cols-[2.6rem_1fr_auto_auto] items-center gap-3 px-5 py-2.5 text-sm"><span class="font-bold text-gray-400">{player.consensusRank ? `#${Math.round(player.consensusRank)}` : '—'}</span><div><div class="font-medium">{player.name}{#if player.injuryStatus}<span class="ml-2 text-xs font-semibold text-red-600">{player.injuryStatus}</span>{/if}</div><div class="text-xs text-gray-500">{player.position ?? '—'} · {player.nflTeam ?? 'FA'}{player.tier ? ` · Tier ${player.tier}` : ''}</div></div><div class="text-right"><div class="text-xs text-gray-400">ADP</div><div class="font-semibold">{player.adp ? player.adp.toFixed(1) : '—'}</div></div><div class="w-20 text-right text-xs text-gray-500">{player.minPick && player.maxPick ? `${player.minPick}–${player.maxPick}` : 'no range'}</div></div>{/each}
 				</div>
 			</section>
 

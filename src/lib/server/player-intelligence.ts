@@ -52,3 +52,27 @@ export function intelligenceSummary(seasonYear: number) {
 	const news = db.prepare('SELECT COUNT(*) count, MAX(published_at) updatedAt FROM player_news').get() as any;
 	return { catalog, valueSources: values, news };
 }
+
+export function rankedAvailablePlayers(seasonYear: number, teamCount: number, draftedPicks: Array<{ catalogId?: string | null; playerName?: string | null }>) {
+	ensurePlayerCatalog();
+	const db = getDatabase();
+	const rows = db.prepare(`SELECT p.id catalogId,p.espn_id id,p.full_name name,p.position,p.nfl_team nflTeam,p.bye_week byeWeek,
+		r.overall_rank consensusRank,r.position_rank positionRank,r.tier,r.value_json rankingJson,
+		a.adp,a.value_json adpJson,s.status,s.injury_status injuryStatus,s.practice_participation practiceStatus
+		FROM player_values r JOIN players p ON p.id=r.player_id
+		LEFT JOIN player_values a ON a.player_id=p.id AND a.season_year=r.season_year AND a.source='myfantasyleague-adp' AND a.scoring_format=?
+		LEFT JOIN player_status s ON s.player_id=p.id
+		WHERE r.season_year=? AND r.source='fantasypros-ecr-via-dynastyprocess' AND r.scoring_format='PPR'
+		ORDER BY r.overall_rank`).all(`PPR_${teamCount}_TEAM`, seasonYear) as any[];
+	const drafted = new Set(draftedPicks.map((pick) => pick.catalogId).filter(Boolean));
+	const draftedNames = new Set(draftedPicks.map((pick) => normalizePlayerName(pick.playerName)).filter(Boolean));
+	return rows.filter((row) => !drafted.has(row.catalogId) && !draftedNames.has(normalizePlayerName(row.name))).map((row) => {
+		const ranking = JSON.parse(row.rankingJson ?? '{}');
+		const adp = JSON.parse(row.adpJson ?? '{}');
+		return { id: row.id ?? `catalog:${row.catalogId}`, catalogId: row.catalogId, name: row.name, position: row.position,
+			nflTeam: row.nflTeam, byeWeek: row.byeWeek, consensusRank: row.consensusRank, positionRank: row.positionRank,
+			tier: row.tier, rankUncertainty: ranking.sd ?? null, rankDelta: ranking.rankDelta ?? null, adp: row.adp,
+			minPick: adp.minPick ?? null, maxPick: adp.maxPick ?? null, draftSelectionPct: adp.draftSelectionPct ?? null,
+			totalDrafts: adp.totalDrafts ?? null, status: row.status, injuryStatus: row.injuryStatus, practiceStatus: row.practiceStatus };
+	});
+}

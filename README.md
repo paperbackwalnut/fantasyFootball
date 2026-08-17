@@ -18,6 +18,7 @@ Local-first fantasy football tooling focused first on reliable ESPN live-draft s
 - Local database backup and restore endpoints
 - Manual daily refresh of current player positions, teams, injury/practice status, depth-chart order, and add/drop trends through Sleeper's official read-only API
 - Daily 2026 PPR redraft expert-consensus rankings, uncertainty, movement, and derived positional tiers from DynastyProcess's latest-only open dataset
+- Recent league-size-specific PPR redraft ADP with earliest/latest pick ranges and draft sample sizes from MyFantasyLeague's official API
 
 ### Foundation present, data feeds not connected yet
 
@@ -126,6 +127,7 @@ Backup APIs:
 - Current player metadata and add/drop trends: [Sleeper's official read-only API](https://docs.sleeper.com/). Sleeper recommends refreshing the full player dataset no more than once per day.
 - Planned open injury, depth-chart, and statistical inputs: [nflverse](https://github.com/nflverse/nflverse-data), subject to each dataset's published attribution and license requirements.
 - PPR expert consensus rankings: FantasyPros ECR distributed through [DynastyProcess open data](https://github.com/dynastyprocess/data). Derived tiers are local calculations based on gaps between adjacent positional ECR values.
+- Recent ADP: [MyFantasyLeague's official developer API](https://api.myfantasyleague.com/2026/api_info?STATE=details), filtered to PPR redraft leagues with mocks excluded and stored separately by league size.
 
 ## Safety and scope
 
