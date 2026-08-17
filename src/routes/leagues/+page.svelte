@@ -19,14 +19,16 @@
 	let loading = true;
 	let showImportModal = false;
 	let importType: 'espn' | 'sleeper' = 'espn';
+	const currentSeason = new Date().getFullYear();
+	const seasonOptions = Array.from({ length: 8 }, (_, index) => currentSeason - index);
 
 	// Import form data - flattened for binding
 	let espnLeagueId = '';
 	let espnS2 = '';
 	let espnSwid = '';
-	let espnSeasons = [2024, 2023, 2022];
+	let espnSeasons = [currentSeason];
 	let sleeperUsername = '';
-	let sleeperSeasons = [2024, 2023, 2022];
+	let sleeperSeasons = [currentSeason];
 	let season = '';
 	$: selectedSeasons = importType === 'espn' ? espnSeasons : sleeperSeasons;
 	let importing = false;
@@ -80,9 +82,9 @@
 		espnLeagueId = '';
 		espnS2 = '';
 		espnSwid = '';
-		espnSeasons = [2024, 2023, 2022];
+		espnSeasons = [currentSeason];
 		sleeperUsername = '';
-		sleeperSeasons = [2024, 2023, 2022];
+		sleeperSeasons = [currentSeason];
 	}
 
 	async function handleImport() {
@@ -90,12 +92,11 @@
 		importError = '';
 
 		try {
-			const endpoint =
-				importType === 'espn' ? '/api/espn/import-history' : '/api/sleeper/import-history';
+			const endpoint = '/api/import';
 			const body =
 				importType === 'espn'
-					? { leagueId: espnLeagueId, espn_s2: espnS2, swid: espnSwid, seasons: espnSeasons }
-					: { username: sleeperUsername, seasons: sleeperSeasons };
+					? { platform: 'ESPN', leagueId: espnLeagueId, auth: { espn_s2: espnS2, swid: espnSwid }, seasons: espnSeasons }
+					: { platform: 'SLEEPER', username: sleeperUsername, seasons: sleeperSeasons };
 
 			const response = await fetch(endpoint, {
 				method: 'POST',
@@ -378,7 +379,7 @@
 								<div>
 									<label class="block text-sm font-medium text-gray-700">Seasons</label>
 									<div class="mt-2 grid grid-cols-4 gap-2">
-										{#each [2024, 2023, 2022, 2021, 2020, 2019] as season}
+										{#each seasonOptions as season}
 											<label class="flex items-center">
 												<input
 													type="checkbox"

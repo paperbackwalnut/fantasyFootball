@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ESPN Draft Sync</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <h1>ESPN Draft Sync</h1>
+      <p id="status" class="status">Loading…</p>
+      <p class="hint">Draft history sync starts automatically on ESPN draft pages. No attachment is required.</p>
+      <div class="actions">
+        <button id="connect" class="secondary">Enable network diagnostics</button>
+        <button id="disconnect" class="secondary">Disable diagnostics</button>
+      </div>
+      <label>Local receiver<input id="endpoint" type="url" /></label>
+      <label>Pairing token <span class="optional">optional for export-only testing</span><input id="token" type="password" autocomplete="off" /></label>
+      <label>Retained observations<input id="retainLimit" type="number" min="100" max="10000" /></label>
+      <div class="actions">
+        <button id="save" class="secondary">Save settings</button>
+        <button id="flush">Send queued now</button>
+        <button id="export" class="secondary">Export capture</button>
+        <button id="clear" class="danger">Clear</button>
+      </div>
+      <pre id="details"></pre>
+    </main>
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>

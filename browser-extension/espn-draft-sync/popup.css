@@ -1,0 +1,17 @@
+:root { color-scheme: light dark; font: 13px system-ui, sans-serif; }
+body { margin: 0; min-width: 390px; }
+main { padding: 16px; }
+h1 { font-size: 18px; margin: 0 0 8px; }
+.status { border-left: 4px solid #777; padding: 8px; background: color-mix(in srgb, CanvasText 7%, Canvas); }
+.status.connected { border-color: #1b9e4b; }
+.status.error { border-color: #d33; }
+.hint { color: color-mix(in srgb, CanvasText 72%, Canvas); line-height: 1.35; }
+.optional { font-size: 11px; font-weight: 400; opacity: .72; }
+label { display: grid; gap: 4px; margin: 10px 0; font-weight: 600; }
+input { padding: 7px; font: inherit; }
+.actions { display: flex; flex-wrap: wrap; gap: 7px; margin: 10px 0; }
+button { border: 0; border-radius: 4px; padding: 8px 10px; background: #1769e0; color: white; cursor: pointer; }
+button.secondary { background: #59636e; }
+button.danger { background: #a52d2d; }
+button:disabled { opacity: .45; cursor: default; }
+pre { white-space: pre-wrap; max-height: 150px; overflow: auto; font-size: 11px; }

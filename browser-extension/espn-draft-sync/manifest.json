@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "ESPN Draft Sync Recorder",
+  "version": "0.2.0",
+  "description": "Automatically synchronizes ESPN draft history with a local draft assistant.",
+  "permissions": ["activeTab", "storage", "unlimitedStorage", "debugger"],
+  "host_permissions": [
+    "https://fantasy.espn.com/*",
+    "https://lm-api-reads.fantasy.espn.com/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "background": { "service_worker": "service-worker.js", "type": "module" },
+  "action": { "default_title": "ESPN Draft Sync", "default_popup": "popup.html" },
+  "content_scripts": [
+    {
+      "matches": ["https://fantasy.espn.com/football/draft*", "https://fantasy.espn.com/football/mockdraft*"],
+      "js": ["dom-recorder.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

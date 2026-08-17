@@ -1,132 +1,124 @@
-# 🏈🏈✨🤖✨🏈🏈 Super Hype Max XL Triple Gold Star AI Powered Fantasy Football Super Duper Draft Helper Plus 🏈🏈✨🤖✨🏈🏈
+# Fantasy Football Draft Assistant
 
-🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨
-Yeah, I know. The name is ridiculous. But hey, it actually works.
-🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨🚀✨
+Local-first fantasy football tooling focused first on reliable ESPN live-draft synchronization and league-aware pick recommendations. This repository is under active development; the roadmap below distinguishes working features from planned ones.
 
-## What is this thing?
+## Current status
 
-I got tired of FantasyPros' draft assistant being slow and generic, so I built my own. This thing syncs with your ESPN or Sleeper league, watches your draft in real-time, and gives you AI-powered pick recommendations before you're even on the clock.
+### Working
 
-The best part? It learns from your league's draft history and can predict what your buddies are going to pick. No more reaching for players three rounds early because you panicked.
+- Automatic ESPN draft capture from the complete Pick History in the draft-room DOM
+- No manual debugger attachment required for normal synchronization
+- Persistent extension delivery queue with manual retry and exportable diagnostic captures
+- Local SvelteKit receiver protected by a pairing token
+- SQLite storage for observations, live draft state, leagues, teams, picks, player identities, value sources, news, and depth-chart relationships
+- AES-256-GCM encryption for stored ESPN credentials with a separate local key
+- Live dashboard with receiver health, recent picks, team rosters, draft completion, available-player search, and identity diagnostics
+- Automatic ESPN user-team, draft-slot, roster-construction, and next-turn detection
+- ESPN and Sleeper league-history import foundations
+- Local database backup and restore endpoints
 
-## Features that actually matter
+### Foundation present, data feeds not connected yet
 
-- **Auto-syncs with ESPN and Sleeper** - No manual data entry nonsense
-- **Real-time draft monitoring** - Updates instantly when picks are made
-- **Pre-computed recommendations** - AI analyzes your next picks while others are drafting
-- **Opponent modeling** - Learns draft patterns to predict what your leaguemates will do
-- **Breaking news integration** - Automatically factors in injuries and trades
-- **Stack analysis** - Suggests QB/WR combos and handcuff opportunities
-- **Bye week optimization** - Won't leave you screwed in week 7
+- Multi-source rankings, ADP, projections, and tiers
+- Injury and breaking-news ingestion
+- Depth-chart and handcuff relationships
+- League-aware recommendation scoring
 
-## Tech stuff (if you care)
+### Planned
 
-Built with SvelteKit because React is getting old. Uses Supabase for real-time updates and auth. The AI runs on OpenAI's API with custom prompts I've tuned for fantasy football context.
+1. Import current rankings, ADP, projections, injuries, news, depth charts, and handcuff data into the normalized player-intelligence tables.
+2. Build live recommendations using value over replacement, positional tiers, roster needs, expected availability at the next pick, scoring rules, injury risk, and roster construction.
+3. Complete the ESPN league-import experience and validate custom scoring and lineup configurations.
+4. Add Sleeper live-draft synchronization after the ESPN workflow is stable.
+5. Build a weekly start/sit assistant using projections, matchups, injuries, and league rosters.
+6. Add scheduled local backups and a restore interface.
 
-Local-first architecture means it runs on your machine during drafts - no dependency on my servers when you need it most.
+Auction drafts and hosted multi-user operation are not currently supported.
 
-## Getting started
+## Repository layout
 
-### Prerequisites
+- `src/` — SvelteKit application, local APIs, draft-state reducer, and SQLite repositories
+- `scripts/` — capture replay and local database verification tools
+- `browser-extension/espn-draft-sync/` — unpacked Chrome extension used on ESPN draft pages
+- `.data/` — ignored local database, encrypted credential key, and backups
 
-- Node.js (18+)
-- pnpm (or npm/yarn if you're basic)
-- A Supabase account (free tier works fine)
-- OpenAI API key
+## Requirements
 
-### Setup
+- Node.js 20
+- pnpm
+- Google Chrome or another Chromium browser for the unpacked extension
 
-1. Clone this repo
+## Local setup
 
-```bash
-git clone [your-repo-url]
-cd fantasy-draft-assistant
-```
-
-2. Install dependencies
-
-```bash
+```powershell
 pnpm install
+Copy-Item .env.example .env
 ```
 
-3. Set up your environment variables
+Generate a long pairing token:
 
-```bash
-cp .env.example .env.local
+```powershell
+$bytes = New-Object byte[] 48
+[Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+[Convert]::ToBase64String($bytes)
 ```
 
-Fill in your Supabase URL, key, and OpenAI API key.
+Set the generated value as `ESPN_SYNC_TOKEN` in `.env`, then start the application:
 
-4. Run the development server
-
-```bash
+```powershell
 pnpm dev
 ```
 
-5. Open http://localhost:5173 and sign up
+The development server listens at `http://127.0.0.1:5173` so the Chrome extension can reach it reliably.
 
-### Connect your league
+## Load the Chrome extension
 
-1. Sign in to the app
-2. Go to your ESPN or Sleeper league
-3. Copy the league ID from the URL
-4. Paste it into the app
-5. For ESPN: You might need to log in and grab some cookies (the app will walk you through it)
+1. Open `chrome://extensions`.
+2. Enable **Developer mode**.
+3. Choose **Load unpacked**.
+4. Select `browser-extension/espn-draft-sync` from this repository.
+5. Open the extension popup, set the receiver to `http://127.0.0.1:5173/api/sync/espn/events`, enter the same pairing token, and save.
 
-## How to use during your draft
+Normal draft synchronization starts automatically on ESPN draft and mock-draft pages. Network diagnostics are optional and may display Chrome's debugger notification; they are not needed for ordinary draft capture.
 
-1. Start the app before your draft begins
-2. It'll automatically detect when your draft starts
-3. Watch the real-time updates as picks are made
-4. Check your recommendations panel for AI suggestions
-5. Click on any player to see detailed reasoning
-6. Draft better than your friends
-7. Win your league
-8. Buy me a beer
+## Development checks
 
-## Development
-
-Want to contribute or customize it? Cool.
-
-```bash
-# Run in development mode
-pnpm dev
-
-# Build for production
+```powershell
+pnpm test:sync
+pnpm test:db-security
+pnpm check
 pnpm build
-
-# Run tests (when I write them)
-pnpm test
 ```
 
-The codebase is pretty straightforward:
+Extension parser tests:
 
-- `/src/routes` - SvelteKit pages and API endpoints
-- `/src/lib` - Shared utilities and components
-- `/src/hooks.server.ts` - Authentication handling
+```powershell
+cd browser-extension/espn-draft-sync
+npm test
+```
 
-## Deployment
+Captured draft JSON can be replayed into the reducer with `pnpm replay:sync -- <capture-file>`.
 
-Works great on Vercel, Netlify, or any Node.js host. Just remember to set your environment variables.
+## Local data and credentials
 
-## Known issues
+The SQLite database is stored at `.data/fantasy-football.sqlite` and is ignored by Git. SQLite uses WAL mode.
 
-- ESPN's API is unofficial and sometimes flaky
-- The AI occasionally suggests kickers too early (working on it)
-- Mobile interface could be better
-- No auction draft support yet
+ESPN credentials are encrypted before being written to SQLite. The randomly generated master key is stored separately at `.data/credential.key`, which is also ignored. Database backups intentionally exclude this key. Keep a secure copy if a backup must be restored on another computer; losing it requires re-entering ESPN credentials but does not affect non-secret draft data.
 
-## Contributing
+Backup APIs:
 
-Found a bug? Have an idea? Open an issue or PR. Just don't make the name even longer.
+- `GET /api/local/backups` — list backups
+- `POST /api/local/backups` — create a consistent backup
+- `PUT /api/local/backups` — restore a selected backup
 
-## Disclaimer
+## Known limitations
 
-This won't guarantee you win your league. Your friends might still draft better than you. The AI doesn't know about your weird league rules or that one guy who always drafts three QBs.
+- ESPN does not provide a supported public live-draft API. Synchronization therefore depends on the draft room's Pick History DOM, with raw captures retained for diagnosis.
+- Exact scoring and lineup settings require league import; live draft URLs alone identify the league and user team but do not contain full settings.
+- The bundled cross-provider identity catalog is useful for ID reconciliation but is not itself a current ranking or projection source.
+- Some 2026 rookies and defenses need newer provider identity mappings.
+- The league page still has several non-blocking accessibility warnings.
 
-Use at your own risk. Not responsible for lost buy-ins, angry commissioners, or existential crises about whether fantasy football is just elaborate gambling.
+## Safety and scope
 
----
-
-_Built because I was procrastinating on actual work and my draft was coming up._
+This is a personal local assistant, not a guarantee of fantasy results. Recommendations will remain explainable and source-attributed as data feeds are added.

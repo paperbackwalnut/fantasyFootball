@@ -1,0 +1,86 @@
+import Database from 'better-sqlite3';
+import { mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const dataDirectory = resolve('.data');
+export const databasePath = resolve(process.env.LOCAL_DB_PATH || resolve(dataDirectory, 'fantasy-football.sqlite'));
+let instance: Database.Database | null = null;
+
+const migrationSql = `
+CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS leagues (
+  id TEXT PRIMARY KEY, platform TEXT NOT NULL CHECK(platform IN ('ESPN','SLEEPER')),
+  external_id TEXT NOT NULL, season_year INTEGER NOT NULL, name TEXT NOT NULL,
+  team_count INTEGER NOT NULL DEFAULT 0, draft_type TEXT NOT NULL DEFAULT 'SNAKE',
+  draft_started INTEGER NOT NULL DEFAULT 0, draft_completed INTEGER NOT NULL DEFAULT 0,
+  user_team_id TEXT, auth_json TEXT, settings_json TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  UNIQUE(platform, external_id, season_year)
+);
+CREATE TABLE IF NOT EXISTS teams (
+  id TEXT PRIMARY KEY, league_id TEXT NOT NULL REFERENCES leagues(id) ON DELETE CASCADE,
+  platform_team_id TEXT NOT NULL, name TEXT NOT NULL, owner_name TEXT,
+  draft_position INTEGER, is_user INTEGER NOT NULL DEFAULT 0, data_json TEXT,
+  UNIQUE(league_id, platform_team_id)
+);
+CREATE TABLE IF NOT EXISTS draft_picks (
+  league_id TEXT NOT NULL REFERENCES leagues(id) ON DELETE CASCADE, pick_number INTEGER NOT NULL,
+  round_number INTEGER NOT NULL, round_pick INTEGER NOT NULL, team_id TEXT,
+  platform_player_id TEXT, player_name TEXT NOT NULL, player_position TEXT, player_nfl_team TEXT,
+  player_data_json TEXT, picked_at TEXT, PRIMARY KEY(league_id, pick_number)
+);
+CREATE TABLE IF NOT EXISTS sync_observations (
+  id TEXT PRIMARY KEY, schema_version INTEGER NOT NULL, captured_at TEXT NOT NULL,
+  type TEXT NOT NULL, data_json TEXT NOT NULL, received_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sync_observations_type_time ON sync_observations(type, captured_at);
+CREATE TABLE IF NOT EXISTS live_draft_state (
+  platform TEXT PRIMARY KEY, updated_at TEXT NOT NULL, state_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS provider_cache (
+  key TEXT PRIMARY KEY, value_json TEXT NOT NULL, expires_at TEXT, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS players (
+  id TEXT PRIMARY KEY, full_name TEXT NOT NULL, normalized_name TEXT NOT NULL,
+  position TEXT, nfl_team TEXT, bye_week INTEGER, active INTEGER NOT NULL DEFAULT 1,
+  espn_id TEXT, sleeper_id TEXT, fantasypros_id TEXT, data_json TEXT, updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS players_espn_id ON players(espn_id) WHERE espn_id IS NOT NULL AND espn_id <> '';
+CREATE INDEX IF NOT EXISTS players_normalized_name ON players(normalized_name);
+CREATE TABLE IF NOT EXISTS player_values (
+  player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE, season_year INTEGER NOT NULL,
+  scoring_format TEXT NOT NULL, source TEXT NOT NULL, overall_rank REAL, position_rank REAL,
+  adp REAL, projected_points REAL, tier INTEGER, value_json TEXT, fetched_at TEXT NOT NULL,
+  PRIMARY KEY(player_id, season_year, scoring_format, source)
+);
+CREATE TABLE IF NOT EXISTS player_news (
+  id TEXT PRIMARY KEY, player_id TEXT REFERENCES players(id) ON DELETE CASCADE, source TEXT NOT NULL,
+  published_at TEXT NOT NULL, headline TEXT NOT NULL, summary TEXT, injury_status TEXT,
+  practice_status TEXT, impact_score REAL, url TEXT, data_json TEXT
+);
+CREATE INDEX IF NOT EXISTS player_news_player_time ON player_news(player_id, published_at DESC);
+CREATE TABLE IF NOT EXISTS depth_chart_links (
+  player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  related_player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  relation TEXT NOT NULL, source TEXT NOT NULL, confidence REAL NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL, PRIMARY KEY(player_id, related_player_id, relation, source)
+);
+`;
+
+export function getDatabase() {
+	if (instance) return instance;
+	mkdirSync(dataDirectory, { recursive: true });
+	instance = new Database(databasePath);
+	instance.pragma('journal_mode = WAL');
+	instance.pragma('foreign_keys = ON');
+	instance.pragma('busy_timeout = 5000');
+	instance.exec(migrationSql);
+	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(1, ?)').run(new Date().toISOString());
+	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(2, ?)').run(new Date().toISOString());
+	return instance;
+}
+
+export function closeDatabase() {
+	instance?.close();
+	instance = null;
+}

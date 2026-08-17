@@ -1,0 +1,6 @@
+{
+  "name": "espn-draft-sync-recorder",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test", "receiver": "node receiver.js" }
+}
