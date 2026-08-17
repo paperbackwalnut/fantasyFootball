@@ -24,6 +24,8 @@
 	let selectedTeam = $state('');
 	let lastSuccessfulPoll = $state<Date | null>(null);
 	let now = $state(new Date());
+	let refreshingPlayers = $state(false);
+	let playerRefreshMessage = $state('');
 
 	const recentPicks = $derived(draft?.picks.slice(-12).reverse() ?? []);
 	const unresolved = $derived(draft?.picks.filter((pick) => !pick.playerId) ?? []);
@@ -52,6 +54,22 @@
 			error = cause instanceof Error ? cause.message : 'Could not reach the local receiver';
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function refreshPlayerData() {
+		refreshingPlayers = true;
+		playerRefreshMessage = '';
+		try {
+			const response = await fetch('/api/player-intelligence/refresh', { method: 'POST' });
+			const payload = await response.json();
+			if (!response.ok) throw new Error(payload.message ?? `Refresh returned ${response.status}`);
+			playerRefreshMessage = `${payload.sleeper.players.toLocaleString()} current players refreshed`;
+			await refresh();
+		} catch (cause) {
+			playerRefreshMessage = cause instanceof Error ? cause.message : 'Player refresh failed';
+		} finally {
+			refreshingPlayers = false;
 		}
 	}
 
@@ -119,9 +137,10 @@
 				{#if draft.context.needsLeagueImport}<p class="mt-3 text-xs text-blue-800">Team and draft slot came from the live ESPN room. Import this league to replace safe roster defaults with its exact scoring and lineup settings.</p>{/if}
 			</div>
 			<div class="rounded-xl border bg-white p-5 shadow-sm">
-				<div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Player intelligence</div>
+				<div class="flex items-center justify-between gap-3"><div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Player intelligence</div><button type="button" onclick={refreshPlayerData} disabled={refreshingPlayers} class="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{refreshingPlayers ? 'Refreshing…' : 'Refresh data'}</button></div>
 				<div class="mt-2 text-2xl font-bold">{draft.intelligence.catalog.active.toLocaleString()} <span class="text-sm font-normal text-gray-500">active identities</span></div>
 				<div class="mt-3 grid grid-cols-3 gap-2 text-center text-xs"><div class="rounded-lg bg-gray-50 p-2"><strong class="block text-base">{draft.intelligence.catalog.positioned}</strong>positioned</div><div class="rounded-lg bg-gray-50 p-2"><strong class="block text-base">{draft.intelligence.catalog.withBye}</strong>bye weeks</div><div class="rounded-lg bg-gray-50 p-2"><strong class="block text-base">{draft.intelligence.valueSources.length}</strong>rank sources</div></div>
+				{#if playerRefreshMessage}<p class="mt-2 text-xs text-gray-600">{playerRefreshMessage}</p>{/if}
 			</div>
 		</section>
 

@@ -16,6 +16,7 @@ Local-first fantasy football tooling focused first on reliable ESPN live-draft s
 - Automatic ESPN user-team, draft-slot, roster-construction, and next-turn detection
 - ESPN and Sleeper league-history import foundations
 - Local database backup and restore endpoints
+- Manual daily refresh of current player positions, teams, injury/practice status, depth-chart order, and add/drop trends through Sleeper's official read-only API
 
 ### Foundation present, data feeds not connected yet
 
@@ -26,7 +27,7 @@ Local-first fantasy football tooling focused first on reliable ESPN live-draft s
 
 ### Planned
 
-1. Import current rankings, ADP, projections, injuries, news, depth charts, and handcuff data into the normalized player-intelligence tables.
+1. Import current rankings, ADP, projections, richer injury news, depth charts, and handcuff data into the normalized player-intelligence tables.
 2. Build live recommendations using value over replacement, positional tiers, roster needs, expected availability at the next pick, scoring rules, injury risk, and roster construction.
 3. Complete the ESPN league-import experience and validate custom scoring and lineup configurations.
 4. Add Sleeper live-draft synchronization after the ESPN workflow is stable.
@@ -118,6 +119,11 @@ Backup APIs:
 - The bundled cross-provider identity catalog is useful for ID reconciliation but is not itself a current ranking or projection source.
 - Some 2026 rookies and defenses need newer provider identity mappings.
 - The league page still has several non-blocking accessibility warnings.
+
+## Data-source attribution
+
+- Current player metadata and add/drop trends: [Sleeper's official read-only API](https://docs.sleeper.com/). Sleeper recommends refreshing the full player dataset no more than once per day.
+- Planned open injury, depth-chart, and statistical inputs: [nflverse](https://github.com/nflverse/nflverse-data), subject to each dataset's published attribution and license requirements.
 
 ## Safety and scope
 

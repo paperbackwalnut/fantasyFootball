@@ -65,6 +65,18 @@ CREATE TABLE IF NOT EXISTS depth_chart_links (
   relation TEXT NOT NULL, source TEXT NOT NULL, confidence REAL NOT NULL DEFAULT 1,
   updated_at TEXT NOT NULL, PRIMARY KEY(player_id, related_player_id, relation, source)
 );
+CREATE TABLE IF NOT EXISTS player_status (
+  player_id TEXT PRIMARY KEY REFERENCES players(id) ON DELETE CASCADE,
+  source TEXT NOT NULL, status TEXT, injury_status TEXT, injury_body_part TEXT,
+  practice_participation TEXT, depth_chart_position INTEGER, news_updated_at TEXT,
+  data_json TEXT, fetched_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS player_trends (
+  player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  source TEXT NOT NULL, trend_type TEXT NOT NULL, lookback_hours INTEGER NOT NULL,
+  activity_count INTEGER NOT NULL, fetched_at TEXT NOT NULL,
+  PRIMARY KEY(player_id, source, trend_type, lookback_hours)
+);
 `;
 
 export function getDatabase() {
@@ -77,6 +89,7 @@ export function getDatabase() {
 	instance.exec(migrationSql);
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(1, ?)').run(new Date().toISOString());
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(2, ?)').run(new Date().toISOString());
+	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(3, ?)').run(new Date().toISOString());
 	return instance;
 }
 
