@@ -11,13 +11,17 @@ export async function appendObservations(observations: SyncObservation[]) {
 	const receivedAt = new Date().toISOString();
 	const insert = db.prepare('INSERT OR IGNORE INTO sync_observations(id,schema_version,captured_at,type,data_json,received_at) VALUES(?,?,?,?,?,?)');
 	const saveState = db.prepare(`INSERT INTO live_draft_state(platform,updated_at,state_json) VALUES('ESPN',?,?) ON CONFLICT(platform) DO UPDATE SET updated_at=excluded.updated_at,state_json=excluded.state_json`);
+	const clearState = db.prepare("DELETE FROM live_draft_state WHERE platform='ESPN'");
 	db.transaction(() => {
 		for (const observation of observations) insert.run(observation.id, observation.schemaVersion, observation.capturedAt, observation.type, JSON.stringify(observation.data ?? null), receivedAt);
 		const authoritative = [...observations].reverse().find(isAuthoritativeSnapshot);
 		if (authoritative) {
 			const state = reduceDraftSnapshot(authoritative.data as Record<string, unknown>, masterPlayers, authoritative.capturedAt);
 			saveState.run(authoritative.capturedAt, JSON.stringify(state));
-			if (state.completed) archiveCompletedDraft(state);
+			if (state.completed) {
+				archiveCompletedDraft(state);
+				clearState.run();
+			}
 		}
 	})();
 }
@@ -69,6 +73,20 @@ export function clearCurrentDraftState() {
 	const archive = row ? archiveCompletedDraft(JSON.parse(row.state_json)) : { archived: false };
 	const result = db.prepare("DELETE FROM live_draft_state WHERE platform='ESPN'").run();
 	return { cleared: result.changes > 0, archived: archive.archived };
+}
+
+export function saveRecommendationSnapshot(state: any, context: any, recommendations: any[]) {
+	if (!state?.userIsOnTheClock || state.completed || !recommendations.length) return { saved: false };
+	const url = (() => { try { return state.draftUrl ? new URL(state.draftUrl) : null; } catch { return null; } })();
+	const externalId = url?.searchParams.get('leagueId') ?? null;
+	const seasonYear = Number(url?.searchParams.get('seasonId')) || new Date(state.updatedAt).getFullYear();
+	const userTeamId = context?.userTeamId ?? url?.searchParams.get('teamId') ?? null;
+	const currentPick = Number(context?.currentPick ?? state.currentPick);
+	const stateUpdatedAt = String(state.updatedAt ?? new Date().toISOString());
+	const id = createHash('sha256').update(`ESPN:${externalId ?? ''}:${seasonYear}:${userTeamId ?? ''}:${currentPick}:${stateUpdatedAt}`).digest('hex');
+	const result = getDatabase().prepare(`INSERT OR IGNORE INTO recommendation_snapshots(id,platform,external_id,season_year,user_team_id,current_pick,state_updated_at,context_json,recommendations_json,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?)`).run(id, 'ESPN', externalId, seasonYear, userTeamId, currentPick, stateUpdatedAt, JSON.stringify(context), JSON.stringify(recommendations), new Date().toISOString());
+	return { saved: result.changes > 0, id };
 }
 
 function isAuthoritativeSnapshot(observation: SyncObservation) {

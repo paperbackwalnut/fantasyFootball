@@ -18,7 +18,7 @@ export function ensurePlayerCatalog() {
 		const now = new Date().toISOString();
 		const insert = db.prepare(`INSERT INTO players(id,full_name,normalized_name,position,nfl_team,bye_week,active,espn_id,sleeper_id,fantasypros_id,data_json,updated_at)
 			VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET full_name=excluded.full_name,normalized_name=excluded.normalized_name,
-			nfl_team=excluded.nfl_team,bye_week=excluded.bye_week,active=excluded.active,espn_id=excluded.espn_id,sleeper_id=excluded.sleeper_id,
+			position=COALESCE(excluded.position,players.position),nfl_team=excluded.nfl_team,bye_week=excluded.bye_week,active=excluded.active,espn_id=excluded.espn_id,sleeper_id=excluded.sleeper_id,
 			fantasypros_id=excluded.fantasypros_id,updated_at=excluded.updated_at`);
 		db.transaction(() => {
 			for (const raw of masterPlayers as MasterPlayer[]) {
@@ -29,6 +29,14 @@ export function ensurePlayerCatalog() {
 			}
 		})();
 	}
+	const repairPosition = db.prepare('UPDATE players SET position=COALESCE(position,?), updated_at=? WHERE id=?');
+	const repairedAt = new Date().toISOString();
+	db.transaction(() => {
+		for (const raw of masterPlayers as MasterPlayer[]) {
+			const position = fantasyPositions[String(raw.default_position_id ?? '')];
+			if (raw.id && position) repairPosition.run(position, repairedAt, raw.id);
+		}
+	})();
 	seeded = true;
 }
 
@@ -53,7 +61,7 @@ export function intelligenceSummary(seasonYear: number) {
 	return { catalog, valueSources: values, news };
 }
 
-export function rankedAvailablePlayers(seasonYear: number, teamCount: number, draftedPicks: Array<{ catalogId?: string | null; playerName?: string | null }>) {
+export function rankedAvailablePlayers(seasonYear: number, teamCount: number, draftedPicks: Array<{ catalogId?: string | null; playerName?: string | null }>, espnObserved: Array<{ espnPlayerId?: string | null; name?: string | null }> = []) {
 	ensurePlayerCatalog();
 	const db = getDatabase();
 	const rows = db.prepare(`SELECT p.id catalogId,p.espn_id id,p.full_name name,p.position,p.nfl_team nflTeam,p.bye_week byeWeek,
@@ -67,10 +75,13 @@ export function rankedAvailablePlayers(seasonYear: number, teamCount: number, dr
 		ORDER BY r.overall_rank`).all(`PPR_${teamCount}_TEAM`, seasonYear) as any[];
 	const drafted = new Set(draftedPicks.map((pick) => pick.catalogId).filter(Boolean));
 	const draftedNames = new Set(draftedPicks.map((pick) => normalizePlayerName(pick.playerName)).filter(Boolean));
+	const observedIds = new Set(espnObserved.map((player) => String(player.espnPlayerId ?? '')).filter(Boolean));
+	const observedNames = new Set(espnObserved.map((player) => normalizePlayerName(player.name)).filter(Boolean));
 	return rows.filter((row) => !drafted.has(row.catalogId) && !draftedNames.has(normalizePlayerName(row.name))).map((row) => {
 		const ranking = JSON.parse(row.rankingJson ?? '{}');
 		const adp = JSON.parse(row.adpJson ?? '{}');
 		return { id: row.id ?? `catalog:${row.catalogId}`, catalogId: row.catalogId, name: row.name, position: row.position,
+			espnVerified: observedIds.has(String(row.id)) || observedNames.has(normalizePlayerName(row.name)),
 			nflTeam: row.nflTeam, byeWeek: row.byeWeek, consensusRank: row.consensusRank, positionRank: row.positionRank,
 			tier: row.tier, rankUncertainty: ranking.sd ?? null, rankDelta: ranking.rankDelta ?? null, adp: row.adp,
 			projectedPoints: row.projectedPoints, projectionSource: row.projectionSource,

@@ -29,7 +29,12 @@ test('normalizes known nickname variants conservatively', () => {
 });
 
 test('fills positions when ESPN omits detail for known captured players', () => {
-	const result = resolvePlayer({ name: 'Malik Nabers', espnPlayerId: '4', detail: '' }, createPlayerIndex([{ id: 'd', espn_id: '4', full_name: 'Malik Nabers', active: 'true' }]));
+	const result = resolvePlayer({ name: 'Malik Nabers', espnPlayerId: '4', detail: '' }, createPlayerIndex([{ id: 'd', espn_id: '4', full_name: 'Malik Nabers', default_position_id: '3', active: 'true' }]));
+	assert.equal(result.position, 'WR');
+});
+
+test('falls back to the catalog position when ESPN omits player detail', () => {
+	const result = resolvePlayer({ name: 'DK Metcalf', detail: '' }, createPlayerIndex([{ id: 'd', espn_id: '5', full_name: 'DK Metcalf', default_position_id: '3', active: 'true' }]));
 	assert.equal(result.position, 'WR');
 });
 

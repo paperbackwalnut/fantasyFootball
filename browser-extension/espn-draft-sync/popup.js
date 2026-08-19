@@ -3,7 +3,7 @@ const elements = Object.fromEntries(ids.map((id) => [id, document.getElementById
 const send = (type, extra = {}) => chrome.runtime.sendMessage({ type, ...extra });
 
 async function refresh() {
-  elements.build.textContent = `Build ${chrome.runtime.getManifest().version} · pre-draft + command bridge`;
+  elements.build.textContent = `Build ${chrome.runtime.getManifest().version} · recommendation audit`;
   const status = await send("GET_STATUS");
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const isEspnDraft = /^https:\/\/fantasy\.espn\.com\/football\/(?:draft|mockdraft)/i.test(tab?.url ?? "");

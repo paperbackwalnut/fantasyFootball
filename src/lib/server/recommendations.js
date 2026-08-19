@@ -19,19 +19,33 @@ export function recommendPlayers(players, context, market = {}) {
 		const position = player.position || 'UNKNOWN';
 		const rostered = Number(context.rosterCounts?.[position] || 0);
 		const target = starterTargets[position] || 0;
-		const needBonus = target && rostered < target ? 11 + (target - rostered) * 3 : rostered === 0 && ['RB', 'WR'].includes(position) ? 5 : 0;
-		const value = clamp((currentPick - rank) * 0.55, -14, 24);
-		const adpValue = clamp((currentPick - adp) * 0.3, -8, 12);
+		/** @type {Record<string, number>} */
+		const needWeights = { QB: 5, RB: 11, WR: 10, TE: 7, DST: 5, K: 4 };
+		const needBonus = target && rostered < target ? (needWeights[position] ?? 5) + Math.max(0, target - rostered - 1) * 3 : 0;
+		const consensusDelta = currentPick - rank;
+		const ignoredByRoom = Math.max(0, currentPick - Math.max(rank, adp));
+		const staleThreshold = Math.max(18, (context.teamCount || 10) * 2);
+		const stalePenalty = ignoredByRoom > staleThreshold ? clamp((ignoredByRoom - staleThreshold) * 0.65, 0, 34) : 0;
+		const value = stalePenalty ? 0 : clamp(consensusDelta * 0.42, -14, 18);
+		const adpTrusted = Math.abs(adp - rank) <= Math.max(24, (context.teamCount || 10) * 2.5);
+		const adpValue = adpTrusted && !stalePenalty ? clamp((currentPick - adp) * 0.2, -7, 8) : 0;
 		const goneBeforeNext = estimateAvailabilityRisk(currentPick, nextPick, adp, context.teamCount || 10);
 		const urgency = goneBeforeNext * 15;
 		const nextAtPosition = pool.slice(index + 1).find((candidate) => candidate.position === position);
+		const positionPool = pool.filter((candidate) => candidate.position === position);
+		const positionIndex = positionPool.indexOf(player);
+		const replacementDepth = ({ QB: 3, RB: 8, WR: 9, TE: 4 }[position] ?? 2);
+		const replacement = positionPool[Math.min(positionPool.length - 1, positionIndex + replacementDepth)];
+		const replacementRank = Number(replacement?.consensusRank) || rank;
+		const vorp = clamp((replacementRank - rank) * ({ QB: 0.18, RB: 0.42, WR: 0.38, TE: 0.3 }[position] ?? 0.15), 0, 14);
 		const tierDrop = nextAtPosition?.tier != null && player.tier != null && nextAtPosition.tier > player.tier ? 8 : 0;
 		const run = market.signals?.find((signal) => signal.position === position && signal.active);
 		const marketRunBonus = run && rostered < Math.max(1, target) ? Math.round(run.intensity * 8 * 10) / 10 : 0;
 		const injuryPenalty = player.injuryStatus && !['Healthy', 'Active'].includes(player.injuryStatus) ? 13 : 0;
 		const earlySpecialistPenalty = ['K', 'DST'].includes(position) && round < Math.max(10, (context.teamCount || 10) - 1) ? 35 : 0;
 		const qbDepthPenalty = position === 'QB' && rostered >= 1 ? (round < 10 ? 38 : 24) : 0;
-		const rawScore = 110 - rank * 0.34 + value + adpValue + urgency + needBonus + tierDrop + marketRunBonus - injuryPenalty - earlySpecialistPenalty - qbDepthPenalty;
+		const espnVerifiedBonus = player.espnVerified ? 3 : 0;
+		const rawScore = 110 - rank * 0.34 + value + adpValue + urgency + needBonus + vorp + tierDrop + marketRunBonus + espnVerifiedBonus - stalePenalty - injuryPenalty - earlySpecialistPenalty - qbDepthPenalty;
 		const reasons = [];
 		if (value >= 5) reasons.push(`${Math.round(value / 0.55)} picks past consensus value`);
 		if (needBonus >= 11) reasons.push(`fills a starting ${position} need`);
@@ -40,10 +54,14 @@ export function recommendPlayers(players, context, market = {}) {
 		if (goneBeforeNext >= 0.72 && nextPick > currentPick) reasons.push(`${Math.round(goneBeforeNext * 100)}% estimated chance gone by pick ${nextPick}`);
 		if (player.projectedPoints != null) reasons.push(`${Number(player.projectedPoints).toFixed(1)} projected PPR points`);
 		if (injuryPenalty) reasons.push(`${player.injuryStatus} injury risk applied`);
+		if (stalePenalty) reasons.push(`room has passed repeatedly; ranking confidence reduced`);
+		if (vorp >= 4) reasons.push(`${position} value over the next replacement tier`);
+		if (!adpTrusted) reasons.push(`conflicting ADP excluded from score`);
+		if (espnVerifiedBonus) reasons.push(`verified in ESPN's selectable player table`);
 		if (qbDepthPenalty) reasons.push(`${rostered} QB already rostered; backup cost applied`);
 		if (!reasons.length) reasons.push('best blended rank and roster fit');
 		return { ...player, recommendationScore: Math.round(rawScore * 10) / 10, availabilityRisk: Math.round(goneBeforeNext * 100), reasons: reasons.slice(0, 3), scoreComponents: {
-			consensus: roundScore(110 - rank * 0.34), value: roundScore(value), adpValue: roundScore(adpValue), availability: roundScore(urgency), rosterNeed: roundScore(needBonus), tierScarcity: roundScore(tierDrop), roomTrend: roundScore(marketRunBonus), injury: roundScore(-injuryPenalty), rosterConstruction: roundScore(-earlySpecialistPenalty - qbDepthPenalty)
+			consensus: roundScore(110 - rank * 0.34), value: roundScore(value), adpValue: roundScore(adpValue), availability: roundScore(urgency), rosterNeed: roundScore(needBonus), replacementValue: roundScore(vorp), staleMarket: roundScore(-stalePenalty), espnVerified: roundScore(espnVerifiedBonus), tierScarcity: roundScore(tierDrop), roomTrend: roundScore(marketRunBonus), injury: roundScore(-injuryPenalty), rosterConstruction: roundScore(-earlySpecialistPenalty - qbDepthPenalty)
 		} };
 	}).sort((a, b) => b.recommendationScore - a.recommendationScore).slice(0, 12).map((player, index) => ({ ...player, recommendationRank: index + 1 }));
 }

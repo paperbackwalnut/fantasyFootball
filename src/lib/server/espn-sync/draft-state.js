@@ -1,4 +1,4 @@
-/** @typedef {{ id?: string | null, espn_id?: string | null, full_name?: string | null, sleeper_name?: string | null, fantasypros_name?: string | null, team_abbr?: string | null, active?: string | boolean | null }} CatalogPlayer */
+/** @typedef {{ id?: string | null, espn_id?: string | null, full_name?: string | null, sleeper_name?: string | null, fantasypros_name?: string | null, team_abbr?: string | null, default_position_id?: string | number | null, active?: string | boolean | null }} CatalogPlayer */
 /** @typedef {{ pick?: string, espnPlayerId?: string | null, name?: string, team?: string, detail?: string }} SnapshotPick */
 
 const suffixPattern = /\b(?:jr|sr|ii|iii|iv|v)\b/g;
@@ -53,15 +53,22 @@ export function resolvePlayer(pick, index) {
 	const detail = parsePlayerDetail(pick.detail ?? '', pick.name ?? '');
 	detail.position ??= positionOverrides.get(normalizePlayerName(pick.name)) ?? null;
 	if (pick.espnPlayerId && index.byEspnId.has(String(pick.espnPlayerId))) {
-		return { player: index.byEspnId.get(String(pick.espnPlayerId)) ?? null, confidence: 'espn-id', ...detail };
+		const player = index.byEspnId.get(String(pick.espnPlayerId)) ?? null;
+		detail.position ??= catalogPosition(player);
+		return { player, confidence: 'espn-id', ...detail };
 	}
 	const candidates = index.byName.get(normalizePlayerName(pick.name)) ?? [];
-	if (candidates.length === 1) return { player: candidates[0], confidence: 'exact-name', ...detail };
+	if (candidates.length === 1) { detail.position ??= catalogPosition(candidates[0]); return { player: candidates[0], confidence: 'exact-name', ...detail }; }
 	const teamMatches = detail.nflTeam ? candidates.filter((candidate) => candidate.team_abbr === detail.nflTeam) : [];
-	if (teamMatches.length === 1) return { player: teamMatches[0], confidence: 'name-team', ...detail };
+	if (teamMatches.length === 1) { detail.position ??= catalogPosition(teamMatches[0]); return { player: teamMatches[0], confidence: 'name-team', ...detail }; }
 	const fantasyCandidates = candidates.filter((candidate) => candidate.sleeper_name || candidate.fantasypros_name);
-	if (fantasyCandidates.length === 1) return { player: fantasyCandidates[0], confidence: 'fantasy-catalog', ...detail };
+	if (fantasyCandidates.length === 1) { detail.position ??= catalogPosition(fantasyCandidates[0]); return { player: fantasyCandidates[0], confidence: 'fantasy-catalog', ...detail }; }
 	return { player: null, confidence: candidates.length ? 'ambiguous' : 'unmatched', ...detail };
+}
+
+/** @param {CatalogPlayer | null | undefined} player */
+function catalogPosition(player) {
+	return ({ '1': 'QB', '2': 'RB', '3': 'WR', '4': 'TE', '5': 'K', '16': 'DST' })[String(player?.default_position_id ?? '')] ?? null;
 }
 
 /** @param {Record<string, any>} snapshot @param {CatalogPlayer[]} catalog @param {string} capturedAt */
@@ -115,6 +122,7 @@ export function reduceDraftSnapshot(snapshot, catalog, capturedAt) {
 		},
 		picks,
 		teams: [...teamByName.values()],
+		espnObservedAvailable: Array.isArray(snapshot.espnObservedAvailable) ? snapshot.espnObservedAvailable : [],
 		availablePlayers: activeCatalog
 			.filter((player) => player.espn_id && !draftedEspnIds.has(String(player.espn_id)))
 			.map((player) => ({ id: String(player.espn_id), catalogId: player.id ?? null, name: player.full_name ?? '', nflTeam: player.team_abbr || null }))

@@ -4,7 +4,8 @@ import { analyzeDraftMarket } from '../src/lib/server/draft-market.js';
 import { normalizePlayerName } from '../src/lib/server/espn-sync/draft-state.js';
 
 const db = new Database('.data/fantasy-football.sqlite', { readonly: true });
-const saved = db.prepare("SELECT state_json FROM live_draft_state WHERE platform='ESPN'").get();
+const saved = db.prepare("SELECT state_json,'live' source FROM live_draft_state WHERE platform='ESPN'").get()
+	?? db.prepare("SELECT state_json,'archive' source FROM draft_sessions ORDER BY completed_at DESC LIMIT 1").get();
 if (!saved) throw new Error('No saved ESPN draft');
 const state = JSON.parse(saved.state_json);
 const url = new URL(state.draftUrl);
@@ -17,6 +18,7 @@ const values = db.prepare(`SELECT p.id catalogId,p.espn_id id,p.full_name name,p
 	LEFT JOIN player_status s ON s.player_id=p.id
 	WHERE r.season_year=? AND r.source='fantasypros-ecr-via-dynastyprocess' AND r.scoring_format='PPR' ORDER BY r.overall_rank`).all(`PPR_${teamCount}_TEAM`, Number(url.searchParams.get('seasonId')));
 const myPicks = state.picks.filter((pick) => String(pick.teamId) === String(userTeamId));
+const positionFor = (pick) => pick.position ?? values.find((player) => player.catalogId === pick.catalogId || normalizePlayerName(player.name) === normalizePlayerName(pick.playerName))?.position ?? 'UNKNOWN';
 const report = [];
 for (const chosen of myPicks) {
 	const prior = state.picks.filter((pick) => pick.pickNumber < chosen.pickNumber);
@@ -24,7 +26,7 @@ for (const chosen of myPicks) {
 	const draftedNames = new Set(prior.map((pick) => normalizePlayerName(pick.playerName)));
 	const available = values.filter((player) => !draftedIds.has(player.catalogId) && !draftedNames.has(normalizePlayerName(player.name)));
 	const rosterCounts = {};
-	for (const pick of prior.filter((pick) => String(pick.teamId) === String(userTeamId))) rosterCounts[pick.position ?? 'UNKNOWN'] = (rosterCounts[pick.position ?? 'UNKNOWN'] ?? 0) + 1;
+	for (const pick of prior.filter((pick) => String(pick.teamId) === String(userTeamId))) { const position = positionFor(pick); rosterCounts[position] = (rosterCounts[position] ?? 0) + 1; }
 	const next = myPicks.find((pick) => pick.pickNumber > chosen.pickNumber)?.pickNumber ?? null;
 	const advice = recommendPlayers(available, { currentPick: chosen.pickNumber, nextUserPick: next, teamCount, rosterCounts, completed: false }, analyzeDraftMarket(prior));
 	const pickedValue = values.find((player) => player.catalogId === chosen.catalogId || normalizePlayerName(player.name) === normalizePlayerName(chosen.playerName));
@@ -37,4 +39,4 @@ for (let index = 1; index < observations.length; index++) {
 	const seconds = (new Date(observations[index].captured_at) - new Date(observations[index - 1].captured_at)) / 1000;
 	if (seconds > 5) gaps.push({ seconds, from: observations[index - 1].captured_at, to: observations[index].captured_at });
 }
-console.log(JSON.stringify({ team: state.teams.find((team) => String(team.id) === String(userTeamId))?.name, completed: state.completed, picks: report, sync: { observations: observations.length, gaps: gaps.sort((a, b) => b.seconds - a.seconds).slice(0, 20) } }, null, 2));
+console.log(JSON.stringify({ source: saved.source, team: state.teams.find((team) => String(team.id) === String(userTeamId))?.name, completed: state.completed, picks: report, sync: { observations: observations.length, gaps: gaps.sort((a, b) => b.seconds - a.seconds).slice(0, 20) } }, null, 2));

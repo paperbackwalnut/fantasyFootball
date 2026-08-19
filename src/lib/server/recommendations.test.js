@@ -41,3 +41,14 @@ test('discounts stale ADP when the room has already passed repeatedly', () => {
 	assert.equal(result[0].name, 'Current RB');
 	assert.ok((result.find((player) => player.name === 'Ignored QB')?.availabilityRisk ?? 100) < 20);
 });
+
+test('does not preserve a stale consensus value indefinitely', () => {
+	const result = recommendPlayers([
+		{ name: 'Repeatedly Ignored WR', position: 'WR', consensusRank: 80, adp: 100 },
+		{ name: 'Current RB', position: 'RB', consensusRank: 145, adp: 150 }
+	], { ...context, currentPick: 150, nextUserPick: 161, rosterCounts: { WR: 4, RB: 2 } });
+	assert.equal(result[0].name, 'Current RB');
+	const ignored = result.find((player) => player.name === 'Repeatedly Ignored WR');
+	assert.ok(ignored);
+	assert.match(ignored.reasons.join(' '), /ranking confidence reduced/);
+});

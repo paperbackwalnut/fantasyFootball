@@ -45,6 +45,12 @@ CREATE TABLE IF NOT EXISTS draft_sessions (
 );
 CREATE INDEX IF NOT EXISTS draft_sessions_completed ON draft_sessions(completed_at DESC);
 CREATE INDEX IF NOT EXISTS draft_sessions_kind ON draft_sessions(kind, completed_at DESC);
+CREATE TABLE IF NOT EXISTS recommendation_snapshots (
+  id TEXT PRIMARY KEY, platform TEXT NOT NULL, external_id TEXT, season_year INTEGER NOT NULL,
+  user_team_id TEXT, current_pick INTEGER NOT NULL, state_updated_at TEXT NOT NULL,
+  context_json TEXT NOT NULL, recommendations_json TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS recommendation_snapshots_draft_pick ON recommendation_snapshots(platform,external_id,season_year,user_team_id,current_pick,created_at DESC);
 CREATE TABLE IF NOT EXISTS provider_cache (
   key TEXT PRIMARY KEY, value_json TEXT NOT NULL, expires_at TEXT, updated_at TEXT NOT NULL
 );
@@ -105,6 +111,7 @@ export function getDatabase() {
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(3, ?)').run(new Date().toISOString());
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(4, ?)').run(new Date().toISOString());
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(5, ?)').run(new Date().toISOString());
+	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(6, ?)').run(new Date().toISOString());
 	return instance;
 }
 

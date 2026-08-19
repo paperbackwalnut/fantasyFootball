@@ -65,6 +65,7 @@ let reconcileBusy = false;
 let reconcileFingerprint = '';
 let reconcileTimer = null;
 let lastReconcileSentAt = 0;
+let lastObservedAvailablePlayers = [];
 
 const tidy = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
 
@@ -83,6 +84,17 @@ function player(el) {
     name: tidy(el?.querySelector('.playerinfo__playername, .player-column__athlete')),
     detail: tidy(el)
   };
+}
+
+function captureVisibleAvailablePlayers() {
+  const found = new Map();
+  for (const nameElement of document.querySelectorAll('.playerinfo__playername, .player-column__athlete')) {
+    if (nameElement.closest('.pick-history-tables, .pick-message__container, .draft-column .roster')) continue;
+    const row = nameElement.closest('[data-player-id], [data-playerid], [data-athlete-id], .player-row, tr, [role="row"], .Table2__tr') ?? nameElement;
+    const item = { espnPlayerId: espnPlayerId(row), name: tidy(nameElement), detail: tidy(row) };
+    if (item.name) found.set(item.espnPlayerId ? `id:${item.espnPlayerId}` : `name:${item.name.toLowerCase()}`, item);
+  }
+  if (found.size) lastObservedAvailablePlayers = [...found.values()];
 }
 
 function fullDraftState() {
@@ -135,6 +147,7 @@ function fullDraftState() {
       || /draft is complete/i.test(tidy(document.querySelector('h1.sharing__draft-complete'))),
     teams,
     historyPicks,
+    espnObservedAvailable: lastObservedAvailablePlayers,
     activityPicks
   };
 }
@@ -145,6 +158,7 @@ async function reconcile() {
   let originalTab = null;
   try {
     const active = document.querySelector('.tabs__list__item--active button');
+    if (tidy(active) === 'Players') captureVisibleAvailablePlayers();
     if (!historyTabNames.has(tidy(active)) && !document.querySelector('.pick-history')) {
       const history = document.querySelector('.tabs__list__item:nth-child(2) button');
       if (history) {
