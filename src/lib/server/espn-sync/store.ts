@@ -59,7 +59,7 @@ export function archiveCompletedDraft(state: any) {
 	const kind = ['MOCK', 'LEAGUE'].includes(state.draftKind) ? state.draftKind : 'UNKNOWN';
 	const name = state.roomLabel || `${kind === 'MOCK' ? 'ESPN Mock Draft' : 'ESPN Draft'} · ${new Date(state.updatedAt).toLocaleDateString('en-US')}`;
 	const result = getDatabase().prepare(`INSERT OR IGNORE INTO draft_sessions(id,platform,external_id,season_year,kind,name,user_team_id,team_count,draft_slot,completed_at,state_json,created_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, 'ESPN', externalId, seasonYear, kind, name, userTeamId, teams.length, draftSlot, state.updatedAt, JSON.stringify(state), new Date().toISOString());
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, 'ESPN', externalId, seasonYear, kind, name, userTeamId, teams.length, draftSlot, state.updatedAt, JSON.stringify(state), new Date().toISOString());
 	return { archived: result.changes > 0, id };
 }
 
