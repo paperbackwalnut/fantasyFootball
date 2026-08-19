@@ -8,7 +8,10 @@ export const OPTIONS: RequestHandler = async () => new Response(null, { status: 
 
 export const GET: RequestHandler = async ({ request }) => {
 	requireExtensionToken(request);
-	const row = getDatabase().prepare("SELECT value_json,expires_at FROM provider_cache WHERE key='espn:draft-command:pending'").get() as any;
+	const db = getDatabase();
+	const now = new Date().toISOString();
+	db.prepare(`INSERT INTO provider_cache(key,value_json,updated_at) VALUES('espn:draft-command:last-poll',?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at`).run(JSON.stringify({ at: now }), now);
+	const row = db.prepare("SELECT value_json,expires_at FROM provider_cache WHERE key='espn:draft-command:pending'").get() as any;
 	if (!row || (row.expires_at && new Date(row.expires_at) <= new Date())) return json({ command: null }, { headers: corsHeaders() });
 	return json({ command: JSON.parse(row.value_json) }, { headers: corsHeaders() });
 };
@@ -26,6 +29,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 	requireLocalDashboard(request);
 	const stateRow = db.prepare("SELECT state_json FROM live_draft_state WHERE platform='ESPN'").get() as any;
+	const pollRow = db.prepare("SELECT updated_at FROM provider_cache WHERE key='espn:draft-command:last-poll'").get() as any;
+	if (!pollRow || Date.now() - new Date(pollRow.updated_at).getTime() > 5000) throw error(503, 'Extension command bridge is offline. Reload the extension, then refresh the ESPN draft tab.');
 	const state = stateRow ? JSON.parse(stateRow.state_json) : null;
 	if (!state?.userIsOnTheClock) throw error(409, 'ESPN does not currently show you on the clock');
 	if (!body.playerName) throw error(400, 'Player name is required');

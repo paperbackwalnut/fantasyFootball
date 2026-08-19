@@ -19,8 +19,11 @@ export const GET: RequestHandler = async () => {
 	const rankedAvailable = draft && context ? rankedAvailablePlayers(seasonYear, context.teamCount || 10, draft.picks) : [];
 	const market = analyzeDraftMarket(draft?.picks ?? []);
 	const recommendations = context ? recommendPlayers(rankedAvailable, context, market) : [];
+	const commandRows = getDatabase().prepare("SELECT key,value_json,updated_at FROM provider_cache WHERE key IN ('espn:draft-command:last-poll','espn:draft-command:last-result','espn:draft-command:pending')").all() as any[];
+	const commandValues = Object.fromEntries(commandRows.map((row) => [row.key, { ...JSON.parse(row.value_json), updatedAt: row.updated_at }]));
+	const commandBridge = { online: Boolean(commandValues['espn:draft-command:last-poll'] && Date.now() - new Date(commandValues['espn:draft-command:last-poll'].updatedAt).getTime() <= 5000), lastPollAt: commandValues['espn:draft-command:last-poll']?.updatedAt ?? null, pending: commandValues['espn:draft-command:pending'] ?? null, lastResult: commandValues['espn:draft-command:last-result'] ?? null };
 	return json(
-		{ state: draft ? { ...draft, availablePlayers: rankedAvailable.length ? rankedAvailable : draft.availablePlayers, recommendations, market, context, intelligence: intelligenceSummary(seasonYear) } : null, receiver },
+		{ state: draft ? { ...draft, availablePlayers: rankedAvailable.length ? rankedAvailable : draft.availablePlayers, recommendations, market, commandBridge, context, intelligence: intelligenceSummary(seasonYear) } : null, receiver },
 		{ headers: { 'cache-control': 'no-store', 'access-control-allow-origin': '*' } }
 	);
 };

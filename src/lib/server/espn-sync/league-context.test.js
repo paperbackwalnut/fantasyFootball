@@ -24,3 +24,9 @@ test('does not project another turn after a complete 17-round draft', () => {
 	assert.equal(context.nextUserPick, null);
 	assert.equal(context.picksUntilNextTurn, null);
 });
+
+test('uses ESPN first-pick hint before any selections exist', () => {
+	const context = deriveLeagueContext({ draftUrl: 'https://fantasy.espn.com/football/draft?leagueId=1&seasonId=2026&teamId=8', currentPick: 1, draftSlotHint: 7, teams: Array.from({ length: 10 }, (_, index) => ({ id: String(index + 1), name: `Team ${index + 1}`, picks: [] })), picks: [] });
+	assert.equal(context.draftSlot, 7);
+	assert.equal(context.nextUserPick, 7);
+});

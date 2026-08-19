@@ -7,6 +7,7 @@ Local-first fantasy football tooling focused first on reliable ESPN live-draft s
 ### Working
 
 - Automatic ESPN draft capture from the complete Pick History in the draft-room DOM
+- Pre-draft initialization with team, slot, full player pool, and recommendations before pick 1
 - Safe live-draft snapshot reset between mocks without deleting player intelligence or league data
 - Confirmed one-click draft requests from recommendation cards through the bundled extension (exact visible-player verification)
 - Ten-second authoritative extension heartbeat to distinguish a quiet draft from a disconnected sync

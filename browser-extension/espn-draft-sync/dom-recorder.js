@@ -114,13 +114,18 @@ function fullDraftState() {
   }));
   const otc = tidy(document.querySelector('.current-pick-module-container .on-the-clock'));
   const pickArea = tidy(document.querySelector('.pickArea h3'));
+  const pickAreaText = tidy(document.querySelector('.pickArea'));
+  const draftSlotHint = Number(pickAreaText.match(/Your first pick:\s*Round\s*1,\s*Pick\s*(\d+)/i)?.[1]) || null;
+  const preDraft = /draft is about to start/i.test(pickAreaText);
   return {
     url: location.href,
     title: document.title,
     source: 'espn-pick-history',
-    currentPick: Number(otc.match(/Pick\s+(\d+)/i)?.[1]) || null,
+    currentPick: Number(otc.match(/Pick\s+(\d+)/i)?.[1]) || (preDraft ? 1 : null),
+    draftSlotHint,
+    preDraft,
     onTheClock: otc,
-    userIsOnTheClock: /you are on the clock/i.test(pickArea),
+    userIsOnTheClock: /you(?: are|'re|’re) on the clock/i.test(pickArea),
     completed: /draft is complete/i.test(pickArea)
       || /draft is complete/i.test(tidy(document.querySelector('h1.sharing__draft-complete'))),
     teams,
@@ -146,7 +151,7 @@ async function reconcile() {
     const snapshot = fullDraftState();
     const fingerprint = JSON.stringify(snapshot);
 	const heartbeatDue = Date.now() - lastReconcileSentAt >= 10000;
-    if ((snapshot.historyPicks.length || snapshot.activityPicks.length)
+    if ((snapshot.teams.length || snapshot.historyPicks.length || snapshot.activityPicks.length)
         && (fingerprint !== reconcileFingerprint || heartbeatDue)) {
       reconcileFingerprint = fingerprint;
       await chrome.runtime.sendMessage({ type: 'DOM_SNAPSHOT', snapshot }).catch(() => {});
@@ -186,7 +191,7 @@ async function checkDraftCommand() {
 
 async function executeDraftCommand(command) {
   if (command.type !== 'draft-player') return { ok: false, message: 'Unsupported command' };
-  if (!/you are on the clock/i.test(tidy(document.querySelector('.pickArea h3')))) return { ok: false, message: 'ESPN does not show you on the clock' };
+  if (!/you(?: are|'re|’re) on the clock/i.test(tidy(document.querySelector('.pickArea h3')))) return { ok: false, message: 'ESPN does not show you on the clock' };
   const normalize = (value) => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
   let names = [...document.querySelectorAll('.playerinfo__playername, .player-column__athlete')];
   let matches = names.filter((element) => normalize(tidy(element)) === normalize(command.playerName));
@@ -209,8 +214,13 @@ async function executeDraftCommand(command) {
   if (matches.length !== 1) return { ok: false, message: matches.length ? 'Player row was ambiguous' : 'Player is not visible in ESPN; search or filter the player list first' };
   const row = matches[0].closest('[data-player-id], [data-playerid], [data-athlete-id], .player-row, tr, [role="row"], .Table2__tr') ?? matches[0];
   row.scrollIntoView({ block: 'center' });
+  const rowAction = [...row.querySelectorAll('button')].find((button) => !button.disabled && /^(draft|draft player)$/i.test(tidy(button)));
+  if (rowAction) {
+    rowAction.click();
+    return { ok: true, message: `Draft click sent for ${command.playerName}` };
+  }
   row.click();
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await new Promise((resolve) => setTimeout(resolve, 400));
   const buttons = [...document.querySelectorAll('button')].filter((button) => !button.disabled && /^(draft|draft player)$/i.test(tidy(button)));
   if (buttons.length !== 1) return { ok: false, message: buttons.length ? 'ESPN Draft button was ambiguous' : 'ESPN Draft button was not found after selecting the player' };
   buttons[0].click();
@@ -218,3 +228,4 @@ async function executeDraftCommand(command) {
 }
 
 setInterval(() => void checkDraftCommand(), 1000);
+void checkDraftCommand();

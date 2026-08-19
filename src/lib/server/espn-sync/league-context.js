@@ -10,7 +10,7 @@ export function deriveLeagueContext(state, importedLeague) {
 	const picks = state?.picks ?? [];
 	const userTeam = teams.find((/** @type {any} */ team) => String(team.id) === String(userTeamId)) ?? null;
 	const firstRound = picks.filter((/** @type {any} */ pick) => pick.pickNumber <= teams.length);
-	const draftSlot = firstRound.findIndex((/** @type {any} */ pick) => String(pick.teamId) === String(userTeamId)) + 1 || null;
+	const draftSlot = firstRound.findIndex((/** @type {any} */ pick) => String(pick.teamId) === String(userTeamId)) + 1 || Number(state?.draftSlotHint) || null;
 	const currentPick = Number(state?.currentPick ?? picks.length + 1);
 	const completed = Boolean(state?.completed || (teams.length > 0 && currentPick === picks.length + 1 && picks.length >= teams.length * 17 && picks.length % teams.length === 0));
 	const nextUserPick = completed ? null : findNextPick(currentPick, teams.length, draftSlot);

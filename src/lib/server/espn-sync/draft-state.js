@@ -99,6 +99,8 @@ export function reduceDraftSnapshot(snapshot, catalog, capturedAt) {
 		platform: 'espn',
 		updatedAt: capturedAt,
 		draftUrl: snapshot.url ?? null,
+		draftSlotHint: Number(snapshot.draftSlotHint) || null,
+		preDraft: Boolean(snapshot.preDraft),
 		currentPick: snapshot.currentPick ?? (picks.length + 1),
 		completed: Boolean(snapshot.completed),
 		userIsOnTheClock: Boolean(snapshot.userIsOnTheClock),
