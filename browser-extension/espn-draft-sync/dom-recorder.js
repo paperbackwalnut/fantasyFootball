@@ -213,18 +213,30 @@ async function executeDraftCommand(command) {
   }
   if (matches.length !== 1) return { ok: false, message: matches.length ? 'Player row was ambiguous' : 'Player is not visible in ESPN; search or filter the player list first' };
   const row = matches[0].closest('[data-player-id], [data-playerid], [data-athlete-id], .player-row, tr, [role="row"], .Table2__tr') ?? matches[0];
+  const beforePick = tidy(document.querySelector('[data-testid="current-pick"], .current-pick-module-container'));
   row.scrollIntoView({ block: 'center' });
-  const rowAction = [...row.querySelectorAll('button')].find((button) => !button.disabled && /^(draft|draft player)$/i.test(tidy(button)));
+  const rowAction = [...row.querySelectorAll('button')].find((button) => !button.disabled && (button.matches('.Button--draft') || /^(draft|draft player)$/i.test(tidy(button))));
   if (rowAction) {
     rowAction.click();
-    return { ok: true, message: `Draft click sent for ${command.playerName}` };
+    return confirmDraftAccepted(command.playerName, beforePick);
   }
   row.click();
   await new Promise((resolve) => setTimeout(resolve, 400));
   const buttons = [...document.querySelectorAll('button')].filter((button) => !button.disabled && /^(draft|draft player)$/i.test(tidy(button)));
   if (buttons.length !== 1) return { ok: false, message: buttons.length ? 'ESPN Draft button was ambiguous' : 'ESPN Draft button was not found after selecting the player' };
   buttons[0].click();
-  return { ok: true, message: `Draft click sent for ${command.playerName}` };
+  return confirmDraftAccepted(command.playerName, beforePick);
+}
+
+async function confirmDraftAccepted(playerName, beforePick) {
+  const normalize = (value) => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  for (let attempt = 0; attempt < 12; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const currentPick = tidy(document.querySelector('[data-testid="current-pick"], .current-pick-module-container'));
+    const recent = [...document.querySelectorAll('.pick-message__container')].slice(-4).some((element) => normalize(tidy(element)).includes(normalize(playerName)));
+    if (recent || (beforePick && currentPick && currentPick !== beforePick)) return { ok: true, message: `ESPN confirmed ${playerName}` };
+  }
+  return { ok: false, message: `ESPN did not confirm ${playerName}; the click may not have registered` };
 }
 
 setInterval(() => void checkDraftCommand(), 1000);
