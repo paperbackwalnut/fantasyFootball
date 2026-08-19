@@ -2,8 +2,9 @@ import { getDatabase } from '$lib/server/db/database';
 import { normalizePlayerName } from '$lib/server/espn-sync/draft-state.js';
 import { ensurePlayerCatalog } from '$lib/server/player-intelligence';
 import { parseCsv } from './csv.js';
+import { randomUUID } from 'node:crypto';
 
-export const projectionTemplate = `player_name,team,position,projected_points,player_id\nExample Player,BUF,QB,300.5,\n`;
+export const projectionTemplate = `player_name,team,position,projected_points,player_id,games,floor,ceiling,passing_yards,passing_tds,interceptions,rushing_yards,rushing_tds,receptions,receiving_yards,receiving_tds,fumbles\nExample Player,BUF,QB,300.5,,17,240,365,4100,29,11,350,4,0,0,0,3\n`;
 type ProjectionRow = Record<string, string>;
 
 export function importProjectionCsv(csv: string, options: { source: string; seasonYear: number; scoringFormat?: string }) {
@@ -21,9 +22,13 @@ export function importProjectionCsv(csv: string, options: { source: string; seas
 	const insert = db.prepare(`INSERT INTO player_values(player_id,season_year,scoring_format,source,projected_points,value_json,fetched_at)
 		VALUES(?,?,?,?,?,?,?) ON CONFLICT(player_id,season_year,scoring_format,source) DO UPDATE SET projected_points=excluded.projected_points,value_json=excluded.value_json,fetched_at=excluded.fetched_at`);
 	const fetchedAt = new Date().toISOString();
+	const projectionSetId = randomUUID();
+	const insertProjection = db.prepare(`INSERT INTO player_projections(projection_set_id,player_id,games,projected_points,floor,ceiling,variance,stats_json) VALUES(?,?,?,?,?,?,?,?)`);
 	let imported = 0, invalid = 0, unmatched = 0;
 	const unmatchedPlayers: string[] = [];
 	db.transaction(() => {
+		db.prepare(`INSERT INTO projection_sets(id,source,season_year,scoring_basis,published_at,imported_at,methodology_version,metadata_json)
+			VALUES(?,?,?,?,?,?,?,?)`).run(projectionSetId, sourceName, options.seasonYear, scoringFormat, null, fetchedAt, 'csv-v2', JSON.stringify({ columns: Object.keys(rows[0]) }));
 		db.prepare('DELETE FROM player_values WHERE season_year=? AND scoring_format=? AND source=?').run(options.seasonYear, scoringFormat, sourceName);
 		for (const row of rows) {
 			const name = row.player_name?.trim(); const points = Number(row.projected_points);
@@ -33,13 +38,18 @@ export function importProjectionCsv(csv: string, options: { source: string; seas
 			if (row.player_id?.trim()) matches = byProviderId.all(row.player_id.trim(), row.player_id.trim(), row.player_id.trim()) as { id: string }[];
 			if (matches.length !== 1) matches = byNameTeam.all(normalizePlayerName(name), team, team, position, position) as { id: string }[];
 			if (matches.length !== 1) { unmatched++; if (unmatchedPlayers.length < 25) unmatchedPlayers.push(name); continue; }
-			insert.run(matches[0].id, options.seasonYear, scoringFormat, sourceName, points, JSON.stringify({ playerName: name, team, position, suppliedPlayerId: row.player_id?.trim() || null }), fetchedAt);
+			const floor = optionalNumber(row.floor); const ceiling = optionalNumber(row.ceiling);
+			const variance = floor != null && ceiling != null ? Math.pow((ceiling - floor) / 2.56, 2) : null;
+			const stats = Object.fromEntries(['passing_yards','passing_tds','interceptions','rushing_yards','rushing_tds','receptions','receiving_yards','receiving_tds','fumbles'].map((key) => [key, optionalNumber(row[key])]).filter(([, value]) => value != null));
+			insert.run(matches[0].id, options.seasonYear, scoringFormat, sourceName, points, JSON.stringify({ playerName: name, team, position,
+				suppliedPlayerId: row.player_id?.trim() || null, projectionSetId, games: optionalNumber(row.games), floor, ceiling, variance, stats }), fetchedAt);
+			insertProjection.run(projectionSetId, matches[0].id, optionalNumber(row.games), points, floor, ceiling, variance, JSON.stringify(stats));
 			imported++;
 		}
 		db.prepare(`INSERT INTO provider_cache(key,value_json,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at`)
 			.run(`player-source:projections:${options.seasonYear}:${scoringFormat}`, JSON.stringify({ source: sourceName, seasonYear: options.seasonYear, scoringFormat, rows: rows.length, imported, unmatched, invalid }), fetchedAt);
 	})();
-	return { source: sourceName, seasonYear: options.seasonYear, scoringFormat, rows: rows.length, imported, unmatched, invalid, unmatchedPlayers, fetchedAt };
+	return { projectionSetId, source: sourceName, seasonYear: options.seasonYear, scoringFormat, rows: rows.length, imported, unmatched, invalid, unmatchedPlayers, fetchedAt };
 }
 
 export function projectionStatus(seasonYear: number, scoringFormat = 'PPR') {
@@ -52,3 +62,5 @@ function normalizeTeam(value?: string) {
 	if (!team || team === 'FA' || team === 'N/A') return null;
 	return team === 'JAC' ? 'JAX' : team;
 }
+
+function optionalNumber(value?: string) { const parsed = Number(value); return value != null && value !== '' && Number.isFinite(parsed) ? parsed : null; }

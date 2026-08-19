@@ -2,6 +2,7 @@ import masterPlayers from '$lib/data/master_players_enriched.json';
 import { getDatabase } from '$lib/server/db/database';
 import { reduceDraftSnapshot } from './draft-state.js';
 import { createHash } from 'node:crypto';
+import { buildDraftAdvice } from '$lib/server/recommendation-engine';
 
 export type SyncObservation = { schemaVersion: number; id: string; capturedAt: string; type: string; data: unknown };
 type SyncStatus = { observationCount: number; lastObservationAt: string | null; lastBatchAt: string | null; typeCounts: Record<string, number> };
@@ -12,11 +13,13 @@ export async function appendObservations(observations: SyncObservation[]) {
 	const insert = db.prepare('INSERT OR IGNORE INTO sync_observations(id,schema_version,captured_at,type,data_json,received_at) VALUES(?,?,?,?,?,?)');
 	const saveState = db.prepare(`INSERT INTO live_draft_state(platform,updated_at,state_json) VALUES('ESPN',?,?) ON CONFLICT(platform) DO UPDATE SET updated_at=excluded.updated_at,state_json=excluded.state_json`);
 	const clearState = db.prepare("DELETE FROM live_draft_state WHERE platform='ESPN'");
+	let latestState: any = null;
 	db.transaction(() => {
 		for (const observation of observations) insert.run(observation.id, observation.schemaVersion, observation.capturedAt, observation.type, JSON.stringify(observation.data ?? null), receivedAt);
 		const authoritative = [...observations].reverse().find(isAuthoritativeSnapshot);
 		if (authoritative) {
 			const state = reduceDraftSnapshot(authoritative.data as Record<string, unknown>, masterPlayers, authoritative.capturedAt);
+			latestState = state;
 			saveState.run(authoritative.capturedAt, JSON.stringify(state));
 			if (state.completed) {
 				archiveCompletedDraft(state);
@@ -24,6 +27,14 @@ export async function appendObservations(observations: SyncObservation[]) {
 			}
 		}
 	})();
+	if (latestState && !latestState.completed) {
+		try { buildDraftAdvice(latestState); }
+		catch (cause) {
+			const message = cause instanceof Error ? cause.message : 'Unknown recommendation error';
+			db.prepare(`INSERT INTO provider_cache(key,value_json,updated_at) VALUES('recommendation:last-error',?,?)
+				ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at`).run(JSON.stringify({ message }), new Date().toISOString());
+		}
+	}
 }
 
 export async function readSyncStatus(): Promise<SyncStatus> {

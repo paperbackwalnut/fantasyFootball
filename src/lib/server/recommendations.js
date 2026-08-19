@@ -1,7 +1,7 @@
 /** @type {Record<string, number>} */
 const starterTargets = { QB: 1, RB: 2, WR: 2, TE: 1, DST: 1, K: 1 };
 
-/** @typedef {{name:string,position?:string|null,consensusRank?:number|null,adp?:number|null,tier?:number|null,projectedPoints?:number|null,injuryStatus?:string|null,[key:string]:unknown}} Candidate */
+/** @typedef {{name:string,position?:string|null,consensusRank?:number|null,adp?:number|null,tier?:number|null,projectedPoints?:number|null,pointVorp?:number|null,replacementPoints?:number|null,projectionSourceCount?:number|null,projectionDisagreement?:number|null,injuryStatus?:string|null,[key:string]:unknown}} Candidate */
 /** @typedef {{completed?:boolean,currentPick?:number,nextUserPick?:number|null,teamCount?:number,rosterCounts?:Record<string,number>,rosterSlots?:Record<string,number>}} DraftContext */
 /** @typedef {{signals?:Array<{position:string,active:boolean,intensity:number,lastSix:number,demandMultiple:number}>}} DraftMarket */
 
@@ -37,7 +37,8 @@ export function recommendPlayers(players, context, market = {}) {
 		const replacementDepth = ({ QB: 3, RB: 8, WR: 9, TE: 4 }[position] ?? 2);
 		const replacement = positionPool[Math.min(positionPool.length - 1, positionIndex + replacementDepth)];
 		const replacementRank = Number(replacement?.consensusRank) || rank;
-		const vorp = clamp((replacementRank - rank) * ({ QB: 0.18, RB: 0.42, WR: 0.38, TE: 0.3 }[position] ?? 0.15), 0, 14);
+		const rankVorp = clamp((replacementRank - rank) * ({ QB: 0.18, RB: 0.42, WR: 0.38, TE: 0.3 }[position] ?? 0.15), 0, 14);
+		const vorp = player.pointVorp != null ? clamp(Number(player.pointVorp) / 6, -8, 20) : rankVorp;
 		const tierDrop = nextAtPosition?.tier != null && player.tier != null && nextAtPosition.tier > player.tier ? 8 : 0;
 		const run = market.signals?.find((signal) => signal.position === position && signal.active);
 		const marketRunBonus = run && rostered < Math.max(1, target) ? Math.round(run.intensity * 8 * 10) / 10 : 0;
@@ -55,7 +56,8 @@ export function recommendPlayers(players, context, market = {}) {
 		if (player.projectedPoints != null) reasons.push(`${Number(player.projectedPoints).toFixed(1)} projected PPR points`);
 		if (injuryPenalty) reasons.push(`${player.injuryStatus} injury risk applied`);
 		if (stalePenalty) reasons.push(`room has passed repeatedly; ranking confidence reduced`);
-		if (vorp >= 4) reasons.push(`${position} value over the next replacement tier`);
+		if (player.pointVorp != null && vorp >= 4) reasons.push(`${Number(player.pointVorp).toFixed(1)} projected points above replacement`);
+		else if (vorp >= 4) reasons.push(`${position} value over the next replacement tier`);
 		if (!adpTrusted) reasons.push(`conflicting ADP excluded from score`);
 		if (espnVerifiedBonus) reasons.push(`verified in ESPN's selectable player table`);
 		if (qbDepthPenalty) reasons.push(`${rostered} QB already rostered; backup cost applied`);

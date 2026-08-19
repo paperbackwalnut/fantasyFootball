@@ -67,6 +67,35 @@ CREATE TABLE IF NOT EXISTS player_values (
   adp REAL, projected_points REAL, tier INTEGER, value_json TEXT, fetched_at TEXT NOT NULL,
   PRIMARY KEY(player_id, season_year, scoring_format, source)
 );
+CREATE TABLE IF NOT EXISTS projection_sets (
+  id TEXT PRIMARY KEY, source TEXT NOT NULL, season_year INTEGER NOT NULL, scoring_basis TEXT NOT NULL,
+  published_at TEXT, imported_at TEXT NOT NULL, methodology_version TEXT NOT NULL, metadata_json TEXT
+);
+CREATE INDEX IF NOT EXISTS projection_sets_season_source ON projection_sets(season_year,source,imported_at DESC);
+CREATE TABLE IF NOT EXISTS player_projections (
+  projection_set_id TEXT NOT NULL REFERENCES projection_sets(id) ON DELETE CASCADE,
+  player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  games REAL, projected_points REAL, floor REAL, ceiling REAL, variance REAL, stats_json TEXT,
+  PRIMARY KEY(projection_set_id,player_id)
+);
+CREATE INDEX IF NOT EXISTS player_projections_player ON player_projections(player_id,projection_set_id);
+CREATE TABLE IF NOT EXISTS model_manifests (
+  id TEXT PRIMARY KEY, model_version TEXT NOT NULL, league_settings_hash TEXT NOT NULL,
+  inputs_json TEXT NOT NULL, generated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS recommendation_runs (
+  id TEXT PRIMARY KEY, platform TEXT NOT NULL, external_id TEXT, season_year INTEGER NOT NULL,
+  user_team_id TEXT, current_pick INTEGER NOT NULL, state_hash TEXT NOT NULL, model_manifest_id TEXT,
+  status TEXT NOT NULL, runtime_ms INTEGER, simulation_count INTEGER NOT NULL DEFAULT 0,
+  context_json TEXT NOT NULL, created_at TEXT NOT NULL, completed_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS recommendation_runs_state ON recommendation_runs(platform,state_hash,model_manifest_id);
+CREATE TABLE IF NOT EXISTS recommendation_candidates (
+  run_id TEXT NOT NULL REFERENCES recommendation_runs(id) ON DELETE CASCADE,
+  player_id TEXT NOT NULL, rank INTEGER NOT NULL, expected_roster_value REAL,
+  starter_points_added REAL, vor REAL, survival_probability REAL, downside REAL, upside REAL,
+  confidence REAL, details_json TEXT NOT NULL, PRIMARY KEY(run_id,player_id)
+);
 CREATE TABLE IF NOT EXISTS player_news (
   id TEXT PRIMARY KEY, player_id TEXT REFERENCES players(id) ON DELETE CASCADE, source TEXT NOT NULL,
   published_at TEXT NOT NULL, headline TEXT NOT NULL, summary TEXT, injury_status TEXT,
@@ -112,6 +141,7 @@ export function getDatabase() {
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(4, ?)').run(new Date().toISOString());
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(5, ?)').run(new Date().toISOString());
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(6, ?)').run(new Date().toISOString());
+	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(7, ?)').run(new Date().toISOString());
 	return instance;
 }
 

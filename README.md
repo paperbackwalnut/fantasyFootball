@@ -24,19 +24,25 @@ Local-first fantasy football tooling focused first on reliable ESPN live-draft s
 - Manual daily refresh of current player positions, teams, injury/practice status, depth-chart order, and add/drop trends through Sleeper's official read-only API
 - Daily 2026 PPR redraft expert-consensus rankings, uncertainty, movement, and derived positional tiers from DynastyProcess's latest-only open dataset
 - Recent league-size-specific PPR redraft ADP with earliest/latest pick ranges and draft sample sizes from MyFantasyLeague's official API
+- Versioned projection-set imports with source provenance, optional floors/ceilings, games, and stat-category fields
+- Multi-source trimmed projection ensemble with source-count and disagreement diagnostics
+- ESPN lineup-slot normalization and flex-aware projected points above replacement
+- State-keyed, reproducible recommendation runs tied to versioned model/input manifests
+- Guarded deterministic two-turn draft rollouts that activate only when projection coverage is sufficient
+- Automatic completed-draft archive plus recommendation-run audit in Draft History
 
 ### Foundation present, data feeds not connected yet
 
-- Additional ranking sources, ADP, and projections
+- Automatic additional projection feeds (multiple manual CSV sources are supported now)
 - Injury and breaking-news ingestion
 - Depth-chart and handcuff relationships
-- Explainable live recommendations blending ECR, ADP, tier scarcity, roster needs, availability risk, and injuries
-- Source-neutral season projection CSV import (working; provider feed selection remains open)
+- Calibrated ESPN-specific per-pick selection hazards; current survival probabilities use a bounded ADP model
+- Broader stat-category coverage for unusual custom ESPN rules; recognized offensive stat fields are already rescored with imported league rules, while unsupported categories retain the source total
 
 ### Planned
 
-1. Import current rankings, ADP, projections, richer injury news, depth charts, and handcuff data into the normalized player-intelligence tables.
-2. Calibrate live recommendations with value over replacement, exact imported scoring rules, projection confidence, and historical backtests.
+1. Import additional current projections, richer injury news, depth charts, handcuffs, and opportunity data into the normalized player-intelligence tables.
+2. Calibrate projection weights and ESPN selection hazards using frozen historical snapshots and out-of-sample backtests.
 3. Complete the ESPN league-import experience and validate custom scoring and lineup configurations.
 4. Add Sleeper live-draft synchronization after the ESPN workflow is stable.
 5. Build a weekly start/sit assistant using projections, matchups, injuries, and league rosters.

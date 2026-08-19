@@ -1,6 +1,7 @@
 import masterPlayers from '$lib/data/master_players_enriched.json';
 import { getDatabase } from '$lib/server/db/database';
 import { normalizePlayerName } from '$lib/server/espn-sync/draft-state.js';
+import { scoreProjectionStats } from '$lib/server/projection-scoring.js';
 
 type MasterPlayer = {
 	id: string; full_name?: string; active?: string | boolean; espn_id?: string; sleeper_id?: string;
@@ -61,18 +62,25 @@ export function intelligenceSummary(seasonYear: number) {
 	return { catalog, valueSources: values, news };
 }
 
-export function rankedAvailablePlayers(seasonYear: number, teamCount: number, draftedPicks: Array<{ catalogId?: string | null; playerName?: string | null }>, espnObserved: Array<{ espnPlayerId?: string | null; name?: string | null }> = []) {
+export function rankedAvailablePlayers(seasonYear: number, teamCount: number, draftedPicks: Array<{ catalogId?: string | null; playerName?: string | null }>, espnObserved: Array<{ espnPlayerId?: string | null; name?: string | null }> = [], scoring: any = null) {
 	ensurePlayerCatalog();
 	const db = getDatabase();
 	const rows = db.prepare(`SELECT p.id catalogId,p.espn_id id,p.full_name name,p.position,p.nfl_team nflTeam,p.bye_week byeWeek,
 		r.overall_rank consensusRank,r.position_rank positionRank,r.tier,r.value_json rankingJson,
-		a.adp,a.value_json adpJson,proj.projected_points projectedPoints,proj.source projectionSource,s.status,s.injury_status injuryStatus,s.practice_participation practiceStatus
+		a.adp,a.value_json adpJson,s.status,s.injury_status injuryStatus,s.practice_participation practiceStatus
 		FROM player_values r JOIN players p ON p.id=r.player_id
 		LEFT JOIN player_values a ON a.player_id=p.id AND a.season_year=r.season_year AND a.source='myfantasyleague-adp' AND a.scoring_format=?
-		LEFT JOIN player_values proj ON proj.rowid=(SELECT pv.rowid FROM player_values pv WHERE pv.player_id=p.id AND pv.season_year=r.season_year AND pv.scoring_format='PPR' AND pv.projected_points IS NOT NULL ORDER BY pv.fetched_at DESC LIMIT 1)
 		LEFT JOIN player_status s ON s.player_id=p.id
 		WHERE r.season_year=? AND r.source='fantasypros-ecr-via-dynastyprocess' AND r.scoring_format='PPR'
 		ORDER BY r.overall_rank`).all(`PPR_${teamCount}_TEAM`, seasonYear) as any[];
+	const projectionRows = db.prepare(`SELECT player_id,source,projected_points,value_json,fetched_at FROM player_values
+		WHERE season_year=? AND scoring_format='PPR' AND projected_points IS NOT NULL ORDER BY fetched_at DESC`).all(seasonYear) as any[];
+	const projectionsByPlayer = new Map<string, any[]>();
+	for (const projection of projectionRows) {
+		const values = projectionsByPlayer.get(projection.player_id) ?? [];
+		if (!values.some((value) => value.source === projection.source)) values.push(projection);
+		projectionsByPlayer.set(projection.player_id, values);
+	}
 	const drafted = new Set(draftedPicks.map((pick) => pick.catalogId).filter(Boolean));
 	const draftedNames = new Set(draftedPicks.map((pick) => normalizePlayerName(pick.playerName)).filter(Boolean));
 	const observedIds = new Set(espnObserved.map((player) => String(player.espnPlayerId ?? '')).filter(Boolean));
@@ -80,11 +88,22 @@ export function rankedAvailablePlayers(seasonYear: number, teamCount: number, dr
 	return rows.filter((row) => !drafted.has(row.catalogId) && !draftedNames.has(normalizePlayerName(row.name))).map((row) => {
 		const ranking = JSON.parse(row.rankingJson ?? '{}');
 		const adp = JSON.parse(row.adpJson ?? '{}');
+		const projectionSources = projectionsByPlayer.get(row.catalogId) ?? [];
+		const normalizedSources = projectionSources.map((projection) => {
+			const metadata = JSON.parse(projection.value_json ?? '{}');
+			const rescored = scoreProjectionStats(metadata.stats, scoring);
+			return { ...projection, points: rescored?.points ?? Number(projection.projected_points), scoringBasis: rescored ? 'ESPN_RULES' : 'SOURCE_TOTAL' };
+		});
+		const projectionValues = normalizedSources.map((projection) => Number(projection.points)).filter(Number.isFinite).sort((a, b) => a - b);
+		const trimmed = projectionValues.length >= 5 ? projectionValues.slice(1, -1) : projectionValues;
+		const projectedPoints = trimmed.length ? trimmed.reduce((sum, value) => sum + value, 0) / trimmed.length : null;
+		const disagreement = projectionValues.length > 1 ? Math.max(...projectionValues) - Math.min(...projectionValues) : null;
 		return { id: row.id ?? `catalog:${row.catalogId}`, catalogId: row.catalogId, name: row.name, position: row.position,
 			espnVerified: observedIds.has(String(row.id)) || observedNames.has(normalizePlayerName(row.name)),
 			nflTeam: row.nflTeam, byeWeek: row.byeWeek, consensusRank: row.consensusRank, positionRank: row.positionRank,
 			tier: row.tier, rankUncertainty: ranking.sd ?? null, rankDelta: ranking.rankDelta ?? null, adp: row.adp,
-			projectedPoints: row.projectedPoints, projectionSource: row.projectionSource,
+			projectedPoints, projectionSourceCount: projectionValues.length, projectionDisagreement: disagreement,
+			projectionSources: normalizedSources.map((projection) => ({ source: projection.source, points: projection.points, scoringBasis: projection.scoringBasis, fetchedAt: projection.fetched_at })),
 			minPick: adp.minPick ?? null, maxPick: adp.maxPick ?? null, draftSelectionPct: adp.draftSelectionPct ?? null,
 			totalDrafts: adp.totalDrafts ?? null, status: row.status, injuryStatus: row.injuryStatus, practiceStatus: row.practiceStatus };
 	});
