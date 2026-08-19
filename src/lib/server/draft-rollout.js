@@ -2,7 +2,7 @@ import { recommendPlayers } from './recommendations.js';
 
 /** @param {any[]} recommendations @param {any[]} pool @param {any} context @param {any} market @param {string} seedText @param {number} [iterations] */
 export function runShortHorizonRollouts(recommendations, pool, context, market, seedText, iterations = 160) {
-	const coverage = pool.filter((player) => Number.isFinite(Number(player.projectedPoints))).length / Math.max(1, pool.length);
+	const coverage = pool.filter((player) => player.projectedPoints != null && Number.isFinite(Number(player.projectedPoints))).length / Math.max(1, pool.length);
 	if (coverage < 0.45 || recommendations.filter((player) => player.pointVorp != null).length < 4 || !context?.nextUserPick) {
 		return { recommendations, meta: { status: 'INSUFFICIENT_PROJECTIONS', coverage: round(coverage), iterations: 0 } };
 	}

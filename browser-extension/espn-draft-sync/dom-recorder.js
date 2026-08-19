@@ -90,7 +90,8 @@ function captureVisibleAvailablePlayers() {
   const found = new Map();
   for (const nameElement of document.querySelectorAll('.playerinfo__playername, .player-column__athlete')) {
     if (nameElement.closest('.pick-history-tables, .pick-message__container, .draft-column .roster')) continue;
-    const row = nameElement.closest('[data-player-id], [data-playerid], [data-athlete-id], .player-row, tr, [role="row"], .Table2__tr') ?? nameElement;
+    const row = findPlayerRow(nameElement);
+    if (/\bundo\b/i.test(tidy(row)) || row.querySelector('.player-details')) continue;
     const cells = [...row.querySelectorAll('td, [role="cell"], .Table2__td')].map((cell) => tidy(cell));
     const table = row.closest('table, [role="table"], .Table2');
     const headers = [...(table?.querySelectorAll('th, [role="columnheader"], .Table2__th') ?? [])].map((cell) => tidy(cell).toUpperCase());
@@ -105,12 +106,21 @@ function captureVisibleAvailablePlayers() {
     const item = {
       espnPlayerId: espnPlayerId(row), name: tidy(nameElement), detail: tidy(row),
       displayedRank: numeric(valueFor('RK', 'RANK') ?? cells[0]),
-      projectedPoints: numeric(valueFor('FPTS', 'PROJ', 'PROJECTED')),
-      capturedAt: new Date().toISOString()
+	  projectedPoints: numeric(valueFor('FPTS', 'PROJ', 'PROJECTED')),
+	  captureColumns: cells.slice(0, 24)
     };
     if (item.name) found.set(item.espnPlayerId ? `id:${item.espnPlayerId}` : `name:${item.name.toLowerCase()}`, item);
   }
   if (found.size) lastObservedAvailablePlayers = [...found.values()];
+}
+
+function findPlayerRow(nameElement) {
+  let current = nameElement;
+  for (let depth = 0; current && depth < 8; depth++, current = current.parentElement) {
+    const columns = current.querySelectorAll(':scope > td, :scope > [role="cell"], :scope > .Table2__td, :scope > div');
+    if (columns.length >= 4 && tidy(current).includes(tidy(nameElement))) return current;
+  }
+  return nameElement.closest('[data-player-id], [data-playerid], [data-athlete-id], .player-row, tr, [role="row"], .Table2__tr') ?? nameElement;
 }
 
 function fullDraftState() {
@@ -220,16 +230,32 @@ async function checkDraftCommand() {
   const command = response?.command;
   if (!command || command.id === lastDraftCommand) return;
   lastDraftCommand = command.id;
+	showDraftToast(`Drafting ${command.playerName}…`, 'pending');
   const result = await executeDraftCommand(command);
+	showDraftToast(result.message, result.ok ? 'success' : 'error');
   await chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_COMMAND', result: { commandId: command.id, ...result } }).catch(() => {});
+}
+
+function showDraftToast(message, status) {
+  let toast = document.getElementById('draftsync-command-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'draftsync-command-toast';
+    Object.assign(toast.style, { position: 'fixed', right: '20px', bottom: '20px', zIndex: '2147483647', maxWidth: '380px', padding: '12px 16px', borderRadius: '10px', color: '#fff', font: '600 14px system-ui', boxShadow: '0 8px 30px rgba(0,0,0,.3)' });
+    document.documentElement.appendChild(toast);
+  }
+  toast.textContent = `DraftSync: ${message}`;
+  toast.style.background = status === 'success' ? '#15803d' : status === 'error' ? '#b91c1c' : '#3730a3';
+  toast.style.display = 'block';
+  clearTimeout(showDraftToast.timer);
+  showDraftToast.timer = setTimeout(() => { toast.style.display = 'none'; }, status === 'pending' ? 6000 : 10000);
 }
 
 async function executeDraftCommand(command) {
   if (command.type !== 'draft-player') return { ok: false, message: 'Unsupported command' };
-  if (!/you(?: are|'re|’re) on the clock/i.test(tidy(document.querySelector('.pickArea h3')))) return { ok: false, message: 'ESPN does not show you on the clock' };
   const normalize = (value) => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  let names = [...document.querySelectorAll('.playerinfo__playername, .player-column__athlete')];
-  let matches = names.filter((element) => normalize(tidy(element)) === normalize(command.playerName));
+  let names = visibleDraftPlayerNames();
+  let matches = matchCommandPlayers(names, command, normalize);
 	if (!matches.length) {
 		const search = [...document.querySelectorAll('input')].find((input) => /search/i.test(input.placeholder ?? '') || /search/i.test(input.getAttribute('aria-label') ?? ''));
 		if (search) {
@@ -237,9 +263,11 @@ async function executeDraftCommand(command) {
 			setter?.call(search, command.playerName);
 			search.dispatchEvent(new Event('input', { bubbles: true }));
 			search.dispatchEvent(new Event('change', { bubbles: true }));
-			await new Promise((resolve) => setTimeout(resolve, 500));
-			names = [...document.querySelectorAll('.playerinfo__playername, .player-column__athlete')];
-			matches = names.filter((element) => normalize(tidy(element)) === normalize(command.playerName));
+			for (let attempt = 0; attempt < 8 && !matches.length; attempt++) {
+				await new Promise((resolve) => setTimeout(resolve, 250));
+				names = visibleDraftPlayerNames();
+				matches = matchCommandPlayers(names, command, normalize);
+			}
 		}
 	}
   if (command.playerId) {
@@ -263,13 +291,33 @@ async function executeDraftCommand(command) {
   return confirmDraftAccepted(command.playerName, beforePick);
 }
 
+function visibleDraftPlayerNames() {
+  return [...document.querySelectorAll('.playerinfo__playername, .player-column__athlete')].filter((element) => {
+    const row = findPlayerRow(element);
+    return !element.closest('.pick-history-tables, .pick-message__container, .draft-column .roster') && !/\bundo\b/i.test(tidy(row)) && !row.querySelector('.player-details');
+  });
+}
+
+function matchCommandPlayers(names, command, normalize) {
+  let matches = names.filter((element) => normalize(tidy(element)) === normalize(command.playerName));
+  if (!matches.length && command.position === 'DST' && command.nflTeam) {
+    matches = names.filter((element) => {
+      const row = findPlayerRow(element);
+      const detail = tidy(row).toUpperCase().replace(/[^A-Z0-9]/g, '');
+      return detail.includes(String(command.nflTeam).toUpperCase()) && /(?:DST|DEF)/.test(detail);
+    });
+  }
+  return matches;
+}
+
 async function confirmDraftAccepted(playerName, beforePick) {
   const normalize = (value) => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
   for (let attempt = 0; attempt < 12; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, 250));
     const currentPick = tidy(document.querySelector('[data-testid="current-pick"], .current-pick-module-container'));
-    const recent = [...document.querySelectorAll('.pick-message__container')].slice(-4).some((element) => normalize(tidy(element)).includes(normalize(playerName)));
-    if (recent || (beforePick && currentPick && currentPick !== beforePick)) return { ok: true, message: `ESPN confirmed ${playerName}` };
+	const recent = [...document.querySelectorAll('.pick-message__container')].slice(-6).some((element) => normalize(tidy(element)).includes(normalize(playerName)));
+	const stillAvailable = visibleDraftPlayerNames().some((element) => normalize(tidy(element)) === normalize(playerName));
+    if (recent || !stillAvailable || (beforePick && currentPick && currentPick !== beforePick)) return { ok: true, message: `ESPN confirmed ${playerName}` };
   }
   return { ok: false, message: `ESPN did not confirm ${playerName}; the click may not have registered` };
 }

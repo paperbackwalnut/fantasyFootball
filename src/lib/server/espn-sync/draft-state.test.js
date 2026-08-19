@@ -62,3 +62,9 @@ test('reduces an empty pre-draft snapshot into usable initial state', () => {
 	assert.equal(state.roomLabel, 'Practice Draft for JCE League');
 	assert.equal(state.teams.length, 1);
 });
+
+test('infers the user is on the clock from the preserved snake draft slot', () => {
+	const teams = Array.from({ length: 10 }, (_, index) => ({ id: String(index + 1), name: `Team ${index + 1}` }));
+	const state = reduceDraftSnapshot({ url: 'https://fantasy.espn.com/football/draft?teamId=7', currentPick: 7, draftSlotHint: 7, teams, historyPicks: [], userIsOnTheClock: false }, catalog, '2026-08-19T12:00:00.000Z');
+	assert.equal(state.userIsOnTheClock, true);
+});

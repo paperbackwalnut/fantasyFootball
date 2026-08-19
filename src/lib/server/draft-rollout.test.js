@@ -13,3 +13,10 @@ test('refines sufficiently projected candidates deterministically', () => {
 	assert.equal(first.meta.status, 'REFINED');
 	assert.deepEqual(first, second);
 });
+
+test('does not run simulations when projections are missing', () => {
+	const pool = Array.from({ length: 12 }, (_, index) => ({ id: String(index), name: `P${index}`, position: index % 2 ? 'WR' : 'RB', consensusRank: index + 1, projectedPoints: null }));
+	const context = { currentPick: 10, nextUserPick: 21, teamCount: 10, rosterCounts: {} };
+	const result = runShortHorizonRollouts(recommendPlayers(pool, context), pool, context, {}, 'missing');
+	assert.equal(result.meta.status, 'INSUFFICIENT_PROJECTIONS');
+});

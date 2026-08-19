@@ -35,7 +35,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!state?.userIsOnTheClock) throw error(409, 'ESPN does not currently show you on the clock');
 	if (!body.playerName) throw error(400, 'Player name is required');
 	const now = new Date();
-	const command = { id: randomUUID(), type: 'draft-player', playerId: body.playerId ? String(body.playerId) : null, playerName: String(body.playerName).slice(0, 120), createdAt: now.toISOString() };
+	const command = { id: randomUUID(), type: 'draft-player', playerId: body.playerId ? String(body.playerId) : null, playerName: String(body.playerName).slice(0, 120),
+		position: body.position ? String(body.position).slice(0, 12) : null, nflTeam: body.nflTeam ? String(body.nflTeam).slice(0, 6) : null, createdAt: now.toISOString() };
 	db.prepare(`INSERT INTO provider_cache(key,value_json,expires_at,updated_at) VALUES('espn:draft-command:pending',?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,expires_at=excluded.expires_at,updated_at=excluded.updated_at`)
 		.run(JSON.stringify(command), new Date(now.getTime() + 30_000).toISOString(), now.toISOString());
 	return json({ ok: true, command });

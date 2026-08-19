@@ -9,6 +9,8 @@ type SyncStatus = { observationCount: number; lastObservationAt: string | null; 
 
 export async function appendObservations(observations: SyncObservation[]) {
 	const db = getDatabase();
+	const previousRow = db.prepare("SELECT state_json FROM live_draft_state WHERE platform='ESPN'").get() as { state_json: string } | undefined;
+	const previousState = previousRow ? JSON.parse(previousRow.state_json) : null;
 	const receivedAt = new Date().toISOString();
 	const insert = db.prepare('INSERT OR IGNORE INTO sync_observations(id,schema_version,captured_at,type,data_json,received_at) VALUES(?,?,?,?,?,?)');
 	const saveState = db.prepare(`INSERT INTO live_draft_state(platform,updated_at,state_json) VALUES('ESPN',?,?) ON CONFLICT(platform) DO UPDATE SET updated_at=excluded.updated_at,state_json=excluded.state_json`);
@@ -18,7 +20,11 @@ export async function appendObservations(observations: SyncObservation[]) {
 		for (const observation of observations) insert.run(observation.id, observation.schemaVersion, observation.capturedAt, observation.type, JSON.stringify(observation.data ?? null), receivedAt);
 		const authoritative = [...observations].reverse().find(isAuthoritativeSnapshot);
 		if (authoritative) {
-			const state = reduceDraftSnapshot(authoritative.data as Record<string, unknown>, masterPlayers, authoritative.capturedAt);
+			const incoming = authoritative.data as Record<string, any>;
+			const state = reduceDraftSnapshot({ ...incoming,
+				draftSlotHint: incoming.draftSlotHint ?? previousState?.draftSlotHint ?? null,
+				draftKind: incoming.draftKind === 'UNKNOWN' ? previousState?.draftKind ?? 'UNKNOWN' : incoming.draftKind,
+				roomLabel: incoming.roomLabel ?? previousState?.roomLabel ?? null }, masterPlayers, authoritative.capturedAt);
 			latestState = state;
 			saveState.run(authoritative.capturedAt, JSON.stringify(state));
 			if (state.completed) {

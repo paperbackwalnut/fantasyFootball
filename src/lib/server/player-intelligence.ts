@@ -100,7 +100,7 @@ export function rankedAvailablePlayers(seasonYear: number, teamCount: number, dr
 			return { ...projection, points: rescored?.points ?? Number(projection.projected_points), scoringBasis: rescored ? 'ESPN_RULES' : 'SOURCE_TOTAL' };
 		});
 		const espn = observedById.get(String(row.id)) ?? observedByName.get(normalizePlayerName(row.name));
-		if (Number.isFinite(Number(espn?.projectedPoints))) normalizedSources.push({ source: 'espn-draft-room', points: Number(espn?.projectedPoints), scoringBasis: 'ESPN_ROOM', fetched_at: espn?.capturedAt ?? null });
+		if (espn?.projectedPoints != null && Number.isFinite(Number(espn.projectedPoints))) normalizedSources.push({ source: 'espn-draft-room', points: Number(espn.projectedPoints), scoringBasis: 'ESPN_ROOM', fetched_at: espn?.capturedAt ?? null });
 		const compatibleSources = scoring?.format && scoring.format !== 'PPR' && normalizedSources.some((projection) => projection.scoringBasis === 'ESPN_ROOM')
 			? normalizedSources.filter((projection) => ['ESPN_ROOM', 'ESPN_RULES'].includes(projection.scoringBasis)) : normalizedSources;
 		const projectionValues = compatibleSources.map((projection) => Number(projection.points)).filter(Number.isFinite).sort((a, b) => a - b);

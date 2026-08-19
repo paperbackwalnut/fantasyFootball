@@ -7,7 +7,7 @@ import { recommendPlayers } from '$lib/server/recommendations.js';
 import { applyLeagueValuation } from '$lib/server/valuation.js';
 import { runShortHorizonRollouts } from '$lib/server/draft-rollout.js';
 
-const MODEL_VERSION = 'draft-advisor-2.0.0';
+const MODEL_VERSION = 'draft-advisor-2.0.1';
 
 export function draftStateHash(draft: any) {
 	return hash(JSON.stringify({ url: draft?.draftUrl, currentPick: draft?.currentPick, completed: draft?.completed, onClock: draft?.userIsOnTheClock,

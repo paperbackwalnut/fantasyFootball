@@ -101,6 +101,9 @@ export function reduceDraftSnapshot(snapshot, catalog, capturedAt) {
 		return normalizedPick;
 	});
 	const activeCatalog = catalog.filter((player) => player.active === true || player.active === 'true');
+	const currentPick = snapshot.currentPick ?? (picks.length + 1);
+	const draftSlot = Number(snapshot.draftSlotHint) || inferDraftSlot(picks, teams.length, safeTeamId(snapshot.url));
+	const inferredOnClock = Boolean(draftSlot && ownsSnakePick(Number(currentPick), teams.length, draftSlot));
 	return {
 		schemaVersion: 2,
 		platform: 'espn',
@@ -110,9 +113,9 @@ export function reduceDraftSnapshot(snapshot, catalog, capturedAt) {
 		roomLabel: snapshot.roomLabel ?? null,
 		draftSlotHint: Number(snapshot.draftSlotHint) || null,
 		preDraft: Boolean(snapshot.preDraft),
-		currentPick: snapshot.currentPick ?? (picks.length + 1),
+		currentPick,
 		completed: Boolean(snapshot.completed),
-		userIsOnTheClock: Boolean(snapshot.userIsOnTheClock),
+		userIsOnTheClock: !snapshot.completed && (Boolean(snapshot.userIsOnTheClock) || inferredOnClock),
 		sync: {
 			source: snapshot.source ?? 'espn-pick-history',
 			status: 'live',
@@ -127,4 +130,20 @@ export function reduceDraftSnapshot(snapshot, catalog, capturedAt) {
 			.filter((player) => player.espn_id && !draftedEspnIds.has(String(player.espn_id)))
 			.map((player) => ({ id: String(player.espn_id), catalogId: player.id ?? null, name: player.full_name ?? '', nflTeam: player.team_abbr || null }))
 	};
+}
+
+/** @param {unknown} url */
+function safeTeamId(url) { try { return typeof url === 'string' ? new URL(url).searchParams.get('teamId') : null; } catch { return null; } }
+/** @param {any[]} picks @param {number} teamCount @param {string | null} userTeamId */
+function inferDraftSlot(picks, teamCount, userTeamId) {
+	if (!teamCount || !userTeamId) return null;
+	const first = picks.find((/** @type {any} */ pick) => pick.pickNumber <= teamCount && String(pick.teamId) === String(userTeamId));
+	return first?.pickNumber ?? null;
+}
+/** @param {number} pick @param {number} teamCount @param {number} slot */
+function ownsSnakePick(pick, teamCount, slot) {
+	if (!pick || !teamCount || !slot) return false;
+	const round = Math.floor((pick - 1) / teamCount) + 1;
+	const withinRound = ((pick - 1) % teamCount) + 1;
+	return (round % 2 ? withinRound : teamCount - withinRound + 1) === slot;
 }

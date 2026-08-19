@@ -13,3 +13,8 @@ test('calculates point value over a league and flex aware replacement baseline',
 	assert.equal(rb.replacementPoints, 210);
 	assert.equal(rb.pointVorp, 30);
 });
+
+test('does not convert missing projections into zero-point VOR', () => {
+	const valued = applyLeagueValuation([{ name: 'Unknown', position: 'RB', projectedPoints: null }], { teamCount: 10, rosterSlots: { RB: 2 } }, []);
+	assert.equal(valued[0].pointVorp, undefined);
+});

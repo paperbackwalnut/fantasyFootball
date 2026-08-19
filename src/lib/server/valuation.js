@@ -8,7 +8,7 @@ const offense = new Set(['QB', 'RB', 'WR', 'TE']);
  * @param {Array<{picks?:any[]}>} teams
  */
 export function applyLeagueValuation(players, context, teams = []) {
-	const projected = players.filter((player) => offense.has(player.position) && Number.isFinite(Number(player.projectedPoints)));
+	const projected = players.filter((player) => offense.has(player.position) && player.projectedPoints != null && Number.isFinite(Number(player.projectedPoints)));
 	if (!projected.length) return players;
 	const slots = context?.rosterSlots ?? {};
 	const teamCount = Math.max(1, Number(context?.teamCount) || teams.length || 10);
@@ -35,7 +35,7 @@ export function applyLeagueValuation(players, context, teams = []) {
 	}
 	return players.map((player) => {
 		const baseline = replacement[player.position];
-		const pointVorp = Number.isFinite(Number(player.projectedPoints)) && Number.isFinite(baseline) ? Number(player.projectedPoints) - baseline : null;
+		const pointVorp = player.projectedPoints != null && Number.isFinite(Number(player.projectedPoints)) && Number.isFinite(baseline) ? Number(player.projectedPoints) - baseline : null;
 		return { ...player, replacementPoints: baseline ?? null, pointVorp, valuationMethod: pointVorp == null ? 'rank-fallback' : 'league-points' };
 	});
 }

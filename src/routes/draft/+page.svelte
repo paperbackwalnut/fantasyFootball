@@ -3,7 +3,7 @@
 
 	type Pick = {
 		pickNumber: number; round: number; teamId: string | null; teamName: string; playerId: string | null;
-		playerName: string; position: string | null; nflTeam: string | null; matchConfidence: string;
+		catalogId?: string | null; playerName: string; position: string | null; nflTeam: string | null; matchConfidence: string;
 	};
 	type Team = { id: string; name: string; picks: Pick[] };
 	type AvailablePlayer = { id: string; catalogId: string | null; name: string; position?: string | null; nflTeam: string | null; consensusRank?: number | null; positionRank?: number | null; espnDisplayedRank?: number | null; tier?: number | null; adp?: number | null; minPick?: number | null; maxPick?: number | null; projectedPoints?: number | null; pointVorp?: number | null; replacementPoints?: number | null; projectionSourceCount?: number | null; projectionDisagreement?: number | null; injuryStatus?: string | null };
@@ -37,7 +37,9 @@
 	let importingProjections = $state(false);
 	let clearingDraft = $state(false);
 	let draftCommandPlayer = $state('');
+	let draftCommandName = $state('');
 	let draftCommandMessage = $state('');
+	let draftCommandSucceeded = $state(false);
 	let draftCommandId = $state('');
 	let draftCommandSentAt = $state(0);
 	let optimisticallyDrafted = $state('');
@@ -63,14 +65,23 @@
 			const payload = await response.json();
 			draft = payload.state;
 			receiver = payload.receiver;
-			if (draftCommandId && draft?.commandBridge?.lastResult?.commandId === draftCommandId) {
+			const selectedPick = draftCommandName && draft?.picks.some((pick) => pick.catalogId === draftCommandPlayer || pick.playerName.toLowerCase() === draftCommandName.toLowerCase());
+			if (draftCommandId && selectedPick) {
+				draftCommandMessage = `✓ ESPN confirmed ${draftCommandName}.`;
+				draftCommandSucceeded = true;
+				optimisticallyDrafted = draftCommandPlayer;
+				draftCommandId = '';
+				draftCommandPlayer = '';
+			} else if (draftCommandId && draft?.commandBridge?.lastResult?.commandId === draftCommandId) {
 				const result = draft.commandBridge.lastResult;
-				draftCommandMessage = result.message || (result.ok ? 'ESPN confirmed the selection.' : 'ESPN did not confirm the selection.');
+				draftCommandMessage = result.ok ? `✓ ${result.message || `ESPN confirmed ${draftCommandName}.`}` : `✕ ${result.message || 'ESPN did not confirm the selection.'}`;
+				draftCommandSucceeded = Boolean(result.ok);
 				if (result.ok) optimisticallyDrafted = draftCommandPlayer;
 				draftCommandId = '';
 				draftCommandPlayer = '';
 			} else if (draftCommandId && Date.now() - draftCommandSentAt > 8000) {
-				draftCommandMessage = 'The extension did not acknowledge the draft command within 8 seconds.';
+				draftCommandMessage = `✕ ESPN did not confirm ${draftCommandName} within 8 seconds. The selection was not assumed successful.`;
+				draftCommandSucceeded = false;
 				draftCommandId = '';
 				draftCommandPlayer = '';
 			}
@@ -142,16 +153,19 @@
 	async function draftPlayer(player: Recommendation) {
 		if (!confirm(`Send ESPN's Draft click for ${player.name}?`)) return;
 		draftCommandPlayer = player.catalogId ?? player.name;
+		draftCommandName = player.name;
 		draftCommandMessage = '';
+		draftCommandSucceeded = false;
 		try {
-			const response = await fetch('/api/sync/espn/commands', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ playerId: player.id?.startsWith('catalog:') ? null : player.id, playerName: player.name }) });
+			const response = await fetch('/api/sync/espn/commands', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ playerId: player.id?.startsWith('catalog:') ? null : player.id, playerName: player.name, position: player.position, nflTeam: player.nflTeam }) });
 			const payload = await response.json().catch(() => ({}));
 			if (!response.ok) throw new Error(payload.message ?? `Draft command returned ${response.status}`);
 			draftCommandId = payload.command.id;
 			draftCommandSentAt = Date.now();
 			draftCommandMessage = `Waiting for ESPN to confirm ${player.name}…`;
 		} catch (cause) {
-			draftCommandMessage = cause instanceof Error ? cause.message : 'Could not send the draft command';
+			draftCommandMessage = `✕ ${cause instanceof Error ? cause.message : 'Could not send the draft command'}`;
+			draftCommandSucceeded = false;
 			draftCommandPlayer = '';
 		}
 	}
@@ -232,7 +246,7 @@
 			<div class="flex flex-wrap items-start justify-between gap-3"><div><div class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Independent pick advisor</div><h2 class="mt-1 text-xl font-bold text-indigo-950">Best options right now</h2><p class="mt-1 text-xs text-indigo-800">League-scored projections, replacement value, market survival, roster construction, and guarded two-turn rollouts.</p></div>{#if draft.context.nextUserPick}<div class="rounded-lg bg-white px-3 py-2 text-xs text-gray-600">Planning through pick <strong>{draft.context.nextUserPick}</strong>{#if draft.recommendationRun}<div class="mt-1 text-[10px] text-gray-400">{draft.recommendationRun.modelVersion}{draft.recommendationRun.cached ? ' · cached' : ' · new state'}</div>{/if}</div>{/if}</div>
 			<div class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-xs"><strong class="text-indigo-900">Room trend:</strong><span class="text-gray-700">{draft.market?.summary ?? 'Collecting picks'}</span>{#each (draft.market?.signals ?? []).slice(0, 3) as signal}<span class="rounded-full px-2 py-1" class:bg-amber-100={signal.active} class:text-amber-900={signal.active} class:bg-gray-100={!signal.active}>{signal.position} {signal.lastTen}/10 · {signal.demandMultiple}× room rate</span>{/each}</div>
 			<div class="mt-2 flex items-center gap-2 text-xs" class:text-green-700={draft.commandBridge?.online} class:text-amber-800={!draft.commandBridge?.online}><span class="h-2 w-2 rounded-full" class:bg-green-500={draft.commandBridge?.online} class:bg-amber-500={!draft.commandBridge?.online}></span>{draft.commandBridge?.online ? 'Extension draft-command bridge online' : 'Draft buttons unavailable: reload the extension and refresh the ESPN tab'}</div>
-			{#if draftCommandMessage}<p class="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-indigo-900">{draftCommandMessage}</p>{/if}
+			{#if draftCommandMessage}<p class="mt-3 rounded-lg border px-3 py-2 text-sm font-semibold" class:border-green-300={draftCommandSucceeded} class:bg-green-50={draftCommandSucceeded} class:text-green-900={draftCommandSucceeded} class:border-red-300={!draftCommandSucceeded} class:bg-red-50={!draftCommandSucceeded} class:text-red-900={!draftCommandSucceeded}>{draftCommandMessage}</p>{/if}
 			{#if visibleRecommendations.length}
 				<div class="mt-4 grid gap-3 lg:grid-cols-3">
 					{#each visibleRecommendations.slice(0, 6) as player}
