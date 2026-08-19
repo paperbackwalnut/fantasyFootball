@@ -1,8 +1,9 @@
-const ids = ["status", "connect", "disconnect", "endpoint", "token", "retainLimit", "save", "flush", "export", "clear", "details"];
+const ids = ["build", "status", "connect", "disconnect", "endpoint", "token", "retainLimit", "save", "flush", "export", "clear", "details"];
 const elements = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
 const send = (type, extra = {}) => chrome.runtime.sendMessage({ type, ...extra });
 
 async function refresh() {
+  elements.build.textContent = `Build ${chrome.runtime.getManifest().version} · pre-draft + command bridge`;
   const status = await send("GET_STATUS");
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const isEspnDraft = /^https:\/\/fantasy\.espn\.com\/football\/(?:draft|mockdraft)/i.test(tab?.url ?? "");

@@ -16,6 +16,8 @@ When the local dashboard shows that you are on the clock, its recommendation car
 6. Enter the same `ESPN_SYNC_TOKEN` configured in the app's `.env` and save.
 7. Open an ESPN mock draft or live draft. No Attach button is required.
 
+The popup must show **Build 0.3.0 · pre-draft + command bridge**. If it shows an older version, remove that Chrome extension entry and load this directory from the main repository; do not load the retired standalone `ffDraftSync` checkout.
+
 The popup reports the queued observation count and latest delivery result. **Send queued now** retries retained observations. **Export capture** creates a diagnostic JSON file without requiring the local receiver.
 
 ## Test
