@@ -91,7 +91,23 @@ function captureVisibleAvailablePlayers() {
   for (const nameElement of document.querySelectorAll('.playerinfo__playername, .player-column__athlete')) {
     if (nameElement.closest('.pick-history-tables, .pick-message__container, .draft-column .roster')) continue;
     const row = nameElement.closest('[data-player-id], [data-playerid], [data-athlete-id], .player-row, tr, [role="row"], .Table2__tr') ?? nameElement;
-    const item = { espnPlayerId: espnPlayerId(row), name: tidy(nameElement), detail: tidy(row) };
+    const cells = [...row.querySelectorAll('td, [role="cell"], .Table2__td')].map((cell) => tidy(cell));
+    const table = row.closest('table, [role="table"], .Table2');
+    const headers = [...(table?.querySelectorAll('th, [role="columnheader"], .Table2__th') ?? [])].map((cell) => tidy(cell).toUpperCase());
+    const valueFor = (...labels) => {
+      const index = headers.findIndex((header) => labels.some((label) => header === label || header.startsWith(`${label} `)));
+      return index >= 0 ? cells[index] : null;
+    };
+    const numeric = (value) => {
+      const match = String(value ?? '').replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+      return match ? Number(match[0]) : null;
+    };
+    const item = {
+      espnPlayerId: espnPlayerId(row), name: tidy(nameElement), detail: tidy(row),
+      displayedRank: numeric(valueFor('RK', 'RANK') ?? cells[0]),
+      projectedPoints: numeric(valueFor('FPTS', 'PROJ', 'PROJECTED')),
+      capturedAt: new Date().toISOString()
+    };
     if (item.name) found.set(item.espnPlayerId ? `id:${item.espnPlayerId}` : `name:${item.name.toLowerCase()}`, item);
   }
   if (found.size) lastObservedAvailablePlayers = [...found.values()];

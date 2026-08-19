@@ -1,7 +1,7 @@
 /** @type {Record<string, number>} */
 const starterTargets = { QB: 1, RB: 2, WR: 2, TE: 1, DST: 1, K: 1 };
 
-/** @typedef {{name:string,position?:string|null,consensusRank?:number|null,adp?:number|null,tier?:number|null,projectedPoints?:number|null,pointVorp?:number|null,replacementPoints?:number|null,projectionSourceCount?:number|null,projectionDisagreement?:number|null,injuryStatus?:string|null,[key:string]:unknown}} Candidate */
+/** @typedef {{name:string,position?:string|null,consensusRank?:number|null,adp?:number|null,espnDisplayedRank?:number|null,tier?:number|null,projectedPoints?:number|null,pointVorp?:number|null,replacementPoints?:number|null,projectionSourceCount?:number|null,projectionDisagreement?:number|null,injuryStatus?:string|null,[key:string]:unknown}} Candidate */
 /** @typedef {{completed?:boolean,currentPick?:number,nextUserPick?:number|null,teamCount?:number,rosterCounts?:Record<string,number>,rosterSlots?:Record<string,number>}} DraftContext */
 /** @typedef {{signals?:Array<{position:string,active:boolean,intensity:number,lastSix:number,demandMultiple:number}>}} DraftMarket */
 
@@ -16,6 +16,7 @@ export function recommendPlayers(players, context, market = {}) {
 	return eligible.map((player, index, pool) => {
 		const rank = Number(player.consensusRank) || index + 1;
 		const adp = Number(player.adp) || rank;
+		const roomRank = Number(player.espnDisplayedRank) || adp;
 		const position = player.position || 'UNKNOWN';
 		const rostered = Number(context.rosterCounts?.[position] || 0);
 		const target = starterTargets[position] || 0;
@@ -29,7 +30,7 @@ export function recommendPlayers(players, context, market = {}) {
 		const value = stalePenalty ? 0 : clamp(consensusDelta * 0.42, -14, 18);
 		const adpTrusted = Math.abs(adp - rank) <= Math.max(24, (context.teamCount || 10) * 2.5);
 		const adpValue = adpTrusted && !stalePenalty ? clamp((currentPick - adp) * 0.2, -7, 8) : 0;
-		const goneBeforeNext = estimateAvailabilityRisk(currentPick, nextPick, adp, context.teamCount || 10);
+		const goneBeforeNext = estimateAvailabilityRisk(currentPick, nextPick, roomRank, context.teamCount || 10);
 		const urgency = goneBeforeNext * 15;
 		const nextAtPosition = pool.slice(index + 1).find((candidate) => candidate.position === position);
 		const positionPool = pool.filter((candidate) => candidate.position === position);
@@ -60,6 +61,7 @@ export function recommendPlayers(players, context, market = {}) {
 		else if (vorp >= 4) reasons.push(`${position} value over the next replacement tier`);
 		if (!adpTrusted) reasons.push(`conflicting ADP excluded from score`);
 		if (espnVerifiedBonus) reasons.push(`verified in ESPN's selectable player table`);
+		if (player.espnDisplayedRank) reasons.push(`ESPN room rank ${Math.round(Number(player.espnDisplayedRank))} informs next-turn availability`);
 		if (qbDepthPenalty) reasons.push(`${rostered} QB already rostered; backup cost applied`);
 		if (!reasons.length) reasons.push('best blended rank and roster fit');
 		return { ...player, recommendationScore: Math.round(rawScore * 10) / 10, availabilityRisk: Math.round(goneBeforeNext * 100), reasons: reasons.slice(0, 3), scoreComponents: {

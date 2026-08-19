@@ -35,7 +35,7 @@ export function runShortHorizonRollouts(recommendations, pool, context, market, 
 
 /** @param {any} player @param {any} context */
 function selectedBeforeNext(player, context) {
-	const adp = Number(player.adp ?? player.consensusRank ?? context.currentPick);
+	const adp = Number(player.espnDisplayedRank ?? player.adp ?? player.consensusRank ?? context.currentPick);
 	const midpoint = (Number(context.currentPick) + Number(context.nextUserPick)) / 2;
 	const base = 1 / (1 + Math.exp(-(midpoint - adp) / 7));
 	const ignored = Math.max(0, Number(context.currentPick) - adp);

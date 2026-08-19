@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 export const projectionTemplate = `player_name,team,position,projected_points,player_id,games,floor,ceiling,passing_yards,passing_tds,interceptions,rushing_yards,rushing_tds,receptions,receiving_yards,receiving_tds,fumbles\nExample Player,BUF,QB,300.5,,17,240,365,4100,29,11,350,4,0,0,0,3\n`;
 type ProjectionRow = Record<string, string>;
 
-export function importProjectionCsv(csv: string, options: { source: string; seasonYear: number; scoringFormat?: string }) {
+export function importProjectionCsv(csv: string, options: { source: string; seasonYear: number; scoringFormat?: string; minimumMatchRate?: number }) {
 	ensurePlayerCatalog();
 	const sourceName = options.source.trim();
 	const scoringFormat = (options.scoringFormat || 'PPR').trim().toUpperCase();
@@ -46,6 +46,8 @@ export function importProjectionCsv(csv: string, options: { source: string; seas
 			insertProjection.run(projectionSetId, matches[0].id, optionalNumber(row.games), points, floor, ceiling, variance, JSON.stringify(stats));
 			imported++;
 		}
+		const minimumMatchRate = Math.max(0, Math.min(1, Number(options.minimumMatchRate ?? 0)));
+		if (imported / rows.length < minimumMatchRate) throw new Error(`Projection match rate ${Math.round(imported / rows.length * 100)}% is below the required ${Math.round(minimumMatchRate * 100)}%`);
 		db.prepare(`INSERT INTO provider_cache(key,value_json,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at`)
 			.run(`player-source:projections:${options.seasonYear}:${scoringFormat}`, JSON.stringify({ source: sourceName, seasonYear: options.seasonYear, scoringFormat, rows: rows.length, imported, unmatched, invalid }), fetchedAt);
 	})();

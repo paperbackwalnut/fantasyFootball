@@ -30,6 +30,9 @@ Local-first fantasy football tooling focused first on reliable ESPN live-draft s
 - State-keyed, reproducible recommendation runs tied to versioned model/input manifests
 - Guarded deterministic two-turn draft rollouts that activate only when projection coverage is sufficient
 - Automatic completed-draft archive plus recommendation-run audit in Draft History
+- Automatic freshness coordinator with per-provider health, last-good fallback, and concurrent refresh suppression
+- Watched projection folder at `.data/imports/projections` using `source--season--format.csv`; successful files are archived after import
+- ESPN displayed rank and room-scored FPTS capture for platform-aware availability estimates
 
 ### Foundation present, data feeds not connected yet
 

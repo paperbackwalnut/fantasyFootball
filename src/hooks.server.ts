@@ -1,8 +1,10 @@
 import type { Handle } from '@sveltejs/kit';
+import { startDataRefreshScheduler } from '$lib/server/data-refresh';
 
 const allowedOrigin = 'https://fantasy.espn.com';
 
 export const handle: Handle = async ({ event, resolve }) => {
+	startDataRefreshScheduler();
 	if (event.url.pathname.startsWith('/api/sync/espn/')) return resolve(event);
 	if (event.request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders() });
 	const response = await resolve(event);

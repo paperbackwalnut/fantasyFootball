@@ -62,7 +62,7 @@ export function intelligenceSummary(seasonYear: number) {
 	return { catalog, valueSources: values, news };
 }
 
-export function rankedAvailablePlayers(seasonYear: number, teamCount: number, draftedPicks: Array<{ catalogId?: string | null; playerName?: string | null }>, espnObserved: Array<{ espnPlayerId?: string | null; name?: string | null }> = [], scoring: any = null) {
+export function rankedAvailablePlayers(seasonYear: number, teamCount: number, draftedPicks: Array<{ catalogId?: string | null; playerName?: string | null }>, espnObserved: Array<{ espnPlayerId?: string | null; name?: string | null; displayedRank?: number | null; projectedPoints?: number | null; capturedAt?: string | null }> = [], scoring: any = null) {
 	ensurePlayerCatalog();
 	const db = getDatabase();
 	const rows = db.prepare(`SELECT p.id catalogId,p.espn_id id,p.full_name name,p.position,p.nfl_team nflTeam,p.bye_week byeWeek,
@@ -73,8 +73,11 @@ export function rankedAvailablePlayers(seasonYear: number, teamCount: number, dr
 		LEFT JOIN player_status s ON s.player_id=p.id
 		WHERE r.season_year=? AND r.source='fantasypros-ecr-via-dynastyprocess' AND r.scoring_format='PPR'
 		ORDER BY r.overall_rank`).all(`PPR_${teamCount}_TEAM`, seasonYear) as any[];
-	const projectionRows = db.prepare(`SELECT player_id,source,projected_points,value_json,fetched_at FROM player_values
-		WHERE season_year=? AND scoring_format='PPR' AND projected_points IS NOT NULL ORDER BY fetched_at DESC`).all(seasonYear) as any[];
+	const projectionQuery = db.prepare(`SELECT player_id,source,projected_points,value_json,fetched_at FROM player_values
+		WHERE season_year=? AND scoring_format=? AND projected_points IS NOT NULL ORDER BY fetched_at DESC`);
+	const desiredProjectionFormat = ['PPR', 'HALF_PPR', 'STANDARD', 'CUSTOM'].includes(scoring?.format) ? scoring.format : 'PPR';
+	let projectionRows = projectionQuery.all(seasonYear, desiredProjectionFormat) as any[];
+	if (!projectionRows.length && desiredProjectionFormat !== 'PPR') projectionRows = projectionQuery.all(seasonYear, 'PPR') as any[];
 	const projectionsByPlayer = new Map<string, any[]>();
 	for (const projection of projectionRows) {
 		const values = projectionsByPlayer.get(projection.player_id) ?? [];
@@ -85,6 +88,8 @@ export function rankedAvailablePlayers(seasonYear: number, teamCount: number, dr
 	const draftedNames = new Set(draftedPicks.map((pick) => normalizePlayerName(pick.playerName)).filter(Boolean));
 	const observedIds = new Set(espnObserved.map((player) => String(player.espnPlayerId ?? '')).filter(Boolean));
 	const observedNames = new Set(espnObserved.map((player) => normalizePlayerName(player.name)).filter(Boolean));
+	const observedById = new Map(espnObserved.filter((player) => player.espnPlayerId).map((player) => [String(player.espnPlayerId), player]));
+	const observedByName = new Map(espnObserved.filter((player) => player.name).map((player) => [normalizePlayerName(player.name), player]));
 	return rows.filter((row) => !drafted.has(row.catalogId) && !draftedNames.has(normalizePlayerName(row.name))).map((row) => {
 		const ranking = JSON.parse(row.rankingJson ?? '{}');
 		const adp = JSON.parse(row.adpJson ?? '{}');
@@ -94,16 +99,21 @@ export function rankedAvailablePlayers(seasonYear: number, teamCount: number, dr
 			const rescored = scoreProjectionStats(metadata.stats, scoring);
 			return { ...projection, points: rescored?.points ?? Number(projection.projected_points), scoringBasis: rescored ? 'ESPN_RULES' : 'SOURCE_TOTAL' };
 		});
-		const projectionValues = normalizedSources.map((projection) => Number(projection.points)).filter(Number.isFinite).sort((a, b) => a - b);
+		const espn = observedById.get(String(row.id)) ?? observedByName.get(normalizePlayerName(row.name));
+		if (Number.isFinite(Number(espn?.projectedPoints))) normalizedSources.push({ source: 'espn-draft-room', points: Number(espn?.projectedPoints), scoringBasis: 'ESPN_ROOM', fetched_at: espn?.capturedAt ?? null });
+		const compatibleSources = scoring?.format && scoring.format !== 'PPR' && normalizedSources.some((projection) => projection.scoringBasis === 'ESPN_ROOM')
+			? normalizedSources.filter((projection) => ['ESPN_ROOM', 'ESPN_RULES'].includes(projection.scoringBasis)) : normalizedSources;
+		const projectionValues = compatibleSources.map((projection) => Number(projection.points)).filter(Number.isFinite).sort((a, b) => a - b);
 		const trimmed = projectionValues.length >= 5 ? projectionValues.slice(1, -1) : projectionValues;
 		const projectedPoints = trimmed.length ? trimmed.reduce((sum, value) => sum + value, 0) / trimmed.length : null;
 		const disagreement = projectionValues.length > 1 ? Math.max(...projectionValues) - Math.min(...projectionValues) : null;
 		return { id: row.id ?? `catalog:${row.catalogId}`, catalogId: row.catalogId, name: row.name, position: row.position,
 			espnVerified: observedIds.has(String(row.id)) || observedNames.has(normalizePlayerName(row.name)),
+			espnDisplayedRank: Number.isFinite(Number(espn?.displayedRank)) ? Number(espn?.displayedRank) : null,
 			nflTeam: row.nflTeam, byeWeek: row.byeWeek, consensusRank: row.consensusRank, positionRank: row.positionRank,
 			tier: row.tier, rankUncertainty: ranking.sd ?? null, rankDelta: ranking.rankDelta ?? null, adp: row.adp,
 			projectedPoints, projectionSourceCount: projectionValues.length, projectionDisagreement: disagreement,
-			projectionSources: normalizedSources.map((projection) => ({ source: projection.source, points: projection.points, scoringBasis: projection.scoringBasis, fetchedAt: projection.fetched_at })),
+			projectionSources: compatibleSources.map((projection) => ({ source: projection.source, points: projection.points, scoringBasis: projection.scoringBasis, fetchedAt: projection.fetched_at })),
 			minPick: adp.minPick ?? null, maxPick: adp.maxPick ?? null, draftSelectionPct: adp.draftSelectionPct ?? null,
 			totalDrafts: adp.totalDrafts ?? null, status: row.status, injuryStatus: row.injuryStatus, practiceStatus: row.practiceStatus };
 	});

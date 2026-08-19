@@ -12,7 +12,7 @@ const MODEL_VERSION = 'draft-advisor-2.0.0';
 export function draftStateHash(draft: any) {
 	return hash(JSON.stringify({ url: draft?.draftUrl, currentPick: draft?.currentPick, completed: draft?.completed, onClock: draft?.userIsOnTheClock,
 		picks: (draft?.picks ?? []).map((pick: any) => [pick.pickNumber, pick.teamId, pick.catalogId ?? pick.playerName]),
-		visible: (draft?.espnObservedAvailable ?? []).map((player: any) => player.espnPlayerId ?? player.name) }));
+		visible: (draft?.espnObservedAvailable ?? []).map((player: any) => [player.espnPlayerId ?? player.name, player.displayedRank, player.projectedPoints]) }));
 }
 
 export function buildDraftAdvice(draft: any) {

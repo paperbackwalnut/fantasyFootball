@@ -12,7 +12,7 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"format": "prettier --write .",
 		"lint": "prettier --check . && eslint .",
-		"test:sync": "node --test src/lib/server/espn-sync/draft-state.test.js src/lib/server/espn-sync/league-context.test.js src/lib/server/db/secrets.test.js src/lib/server/player-sources/csv.test.js src/lib/server/player-sources/adp.test.js src/lib/server/recommendations.test.js src/lib/server/draft-market.test.js src/lib/server/valuation.test.js src/lib/server/draft-rollout.test.js src/lib/server/projection-scoring.test.js",
+		"test:sync": "node --test src/lib/server/espn-sync/draft-state.test.js src/lib/server/espn-sync/league-context.test.js src/lib/server/db/secrets.test.js src/lib/server/player-sources/csv.test.js src/lib/server/player-sources/adp.test.js src/lib/server/recommendations.test.js src/lib/server/draft-market.test.js src/lib/server/valuation.test.js src/lib/server/draft-rollout.test.js src/lib/server/projection-scoring.test.js src/lib/server/data-refresh-utils.test.js",
 		"test:db-security": "node scripts/verify-local-security.mjs",
 		"replay:sync": "node scripts/replay-espn-capture.mjs",
 		"postmortem:draft": "node scripts/draft-postmortem.mjs"

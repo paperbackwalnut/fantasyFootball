@@ -2,6 +2,7 @@ import { clearCurrentDraftState, readCurrentDraftState, readSyncStatus } from '$
 import { getDatabase } from '$lib/server/db/database';
 import { intelligenceSummary, learnDraftedPlayerPositions } from '$lib/server/player-intelligence';
 import { buildDraftAdvice } from '$lib/server/recommendation-engine';
+import { projectionImportDirectory, providerHealth } from '$lib/server/data-refresh';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
@@ -17,7 +18,8 @@ export const GET: RequestHandler = async () => {
 	const commandValues = Object.fromEntries(commandRows.map((row) => [row.key, { ...JSON.parse(row.value_json), updatedAt: row.updated_at }]));
 	const commandBridge = { online: Boolean(commandValues['espn:draft-command:last-poll'] && Date.now() - new Date(commandValues['espn:draft-command:last-poll'].updatedAt).getTime() <= 5000), lastPollAt: commandValues['espn:draft-command:last-poll']?.updatedAt ?? null, pending: commandValues['espn:draft-command:pending'] ?? null, lastResult: commandValues['espn:draft-command:last-result'] ?? null };
 	return json(
-		{ state: draft ? { ...draft, recommendations: advice.recommendations, market: advice.market, recommendationRun: advice.run, commandBridge, context: advice.context, intelligence: intelligenceSummary(seasonYear) } : null, receiver },
+		{ state: draft ? { ...draft, recommendations: advice.recommendations, market: advice.market, recommendationRun: advice.run, commandBridge, context: advice.context,
+			intelligence: { ...intelligenceSummary(seasonYear), health: providerHealth(), projectionImportDirectory: projectionImportDirectory() } } : null, receiver },
 		{ headers: { 'cache-control': 'no-store', 'access-control-allow-origin': '*' } }
 	);
 };
