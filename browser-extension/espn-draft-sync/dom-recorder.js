@@ -115,6 +115,9 @@ function fullDraftState() {
   const otc = tidy(document.querySelector('.current-pick-module-container .on-the-clock'));
   const pickArea = tidy(document.querySelector('.pickArea h3'));
   const pickAreaText = tidy(document.querySelector('.pickArea'));
+  const openingText = (document.body?.innerText ?? '').slice(0, 4000);
+  const roomLabel = openingText.split(/\r?\n/).map((line) => line.trim()).find((line) => /(?:practice|mock)?\s*draft\s+for/i.test(line)) ?? null;
+  const draftKind = /practice draft|mock draft/i.test(`${roomLabel ?? ''} ${openingText.slice(0, 800)} ${location.pathname}`) ? 'MOCK' : roomLabel ? 'LEAGUE' : 'UNKNOWN';
   const draftSlotHint = Number(pickAreaText.match(/Your first pick:\s*Round\s*1,\s*Pick\s*(\d+)/i)?.[1]) || null;
   const preDraft = /draft is about to start/i.test(pickAreaText);
   return {
@@ -124,6 +127,8 @@ function fullDraftState() {
     currentPick: Number(otc.match(/Pick\s+(\d+)/i)?.[1]) || (preDraft ? 1 : null),
     draftSlotHint,
     preDraft,
+    draftKind,
+    roomLabel,
     onTheClock: otc,
     userIsOnTheClock: /you(?: are|'re|’re) on the clock/i.test(pickArea),
     completed: /draft is complete/i.test(pickArea)

@@ -37,6 +37,14 @@ CREATE INDEX IF NOT EXISTS sync_observations_type_time ON sync_observations(type
 CREATE TABLE IF NOT EXISTS live_draft_state (
   platform TEXT PRIMARY KEY, updated_at TEXT NOT NULL, state_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS draft_sessions (
+  id TEXT PRIMARY KEY, platform TEXT NOT NULL, external_id TEXT, season_year INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('MOCK','LEAGUE','UNKNOWN')), name TEXT NOT NULL,
+  user_team_id TEXT, team_count INTEGER NOT NULL DEFAULT 0, draft_slot INTEGER,
+  completed_at TEXT NOT NULL, state_json TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS draft_sessions_completed ON draft_sessions(completed_at DESC);
+CREATE INDEX IF NOT EXISTS draft_sessions_kind ON draft_sessions(kind, completed_at DESC);
 CREATE TABLE IF NOT EXISTS provider_cache (
   key TEXT PRIMARY KEY, value_json TEXT NOT NULL, expires_at TEXT, updated_at TEXT NOT NULL
 );
@@ -96,6 +104,7 @@ export function getDatabase() {
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(2, ?)').run(new Date().toISOString());
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(3, ?)').run(new Date().toISOString());
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(4, ?)').run(new Date().toISOString());
+	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(5, ?)').run(new Date().toISOString());
 	return instance;
 }
 

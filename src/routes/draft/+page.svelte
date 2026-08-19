@@ -177,7 +177,7 @@
 			<h1 class="text-3xl font-bold text-gray-950">Live Draft Command Center</h1>
 			<p class="mt-1 text-sm text-gray-500">SQLite-backed state from the automatic Chrome extension sync</p>
 		</div>
-		<div class="flex flex-wrap items-center justify-end gap-3"><button type="button" onclick={clearDraft} disabled={clearingDraft || !draft} class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm disabled:opacity-40">{clearingDraft ? 'Clearing…' : 'Clear previous draft'}</button><div class="flex items-center gap-3 rounded-full border bg-white px-4 py-2 shadow-sm">
+		<div class="flex flex-wrap items-center justify-end gap-3"><a href="/draft/history" class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm">Draft history</a><button type="button" onclick={clearDraft} disabled={clearingDraft || !draft} class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm disabled:opacity-40">{clearingDraft ? 'Clearing…' : draft?.completed ? 'Archive & clear board' : 'Clear live board'}</button><div class="flex items-center gap-3 rounded-full border bg-white px-4 py-2 shadow-sm">
 			<span class="h-2.5 w-2.5 rounded-full" class:bg-green-500={syncStatus === 'live'} class:bg-amber-500={syncStatus === 'stale' || syncStatus === 'waiting'} class:bg-red-500={syncStatus === 'offline'}></span>
 			<div><div class="text-sm font-semibold">{statusLabel()}</div><div class="text-xs text-gray-500">{secondsOld === null ? 'No observations yet' : `${secondsOld}s since update`}</div></div>
 		</div></div>

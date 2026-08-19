@@ -48,10 +48,12 @@ test('reduces a full snapshot into picks, rosters, and availability', () => {
 });
 
 test('reduces an empty pre-draft snapshot into usable initial state', () => {
-	const state = reduceDraftSnapshot({ source: 'espn-pick-history', preDraft: true, currentPick: 1, draftSlotHint: 7, teams: [{ id: '8', name: 'Mine' }], historyPicks: [] }, catalog, '2026-08-19T12:00:00.000Z');
+	const state = reduceDraftSnapshot({ source: 'espn-pick-history', preDraft: true, draftKind: 'MOCK', roomLabel: 'Practice Draft for JCE League', currentPick: 1, draftSlotHint: 7, teams: [{ id: '8', name: 'Mine' }], historyPicks: [] }, catalog, '2026-08-19T12:00:00.000Z');
 	assert.equal(state.picks.length, 0);
 	assert.equal(state.currentPick, 1);
 	assert.equal(state.draftSlotHint, 7);
 	assert.equal(state.preDraft, true);
+	assert.equal(state.draftKind, 'MOCK');
+	assert.equal(state.roomLabel, 'Practice Draft for JCE League');
 	assert.equal(state.teams.length, 1);
 });

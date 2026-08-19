@@ -99,6 +99,8 @@ export function reduceDraftSnapshot(snapshot, catalog, capturedAt) {
 		platform: 'espn',
 		updatedAt: capturedAt,
 		draftUrl: snapshot.url ?? null,
+		draftKind: ['MOCK', 'LEAGUE'].includes(snapshot.draftKind) ? snapshot.draftKind : 'UNKNOWN',
+		roomLabel: snapshot.roomLabel ?? null,
 		draftSlotHint: Number(snapshot.draftSlotHint) || null,
 		preDraft: Boolean(snapshot.preDraft),
 		currentPick: snapshot.currentPick ?? (picks.length + 1),

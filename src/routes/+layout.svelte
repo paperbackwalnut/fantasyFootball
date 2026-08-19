@@ -13,7 +13,8 @@
 				<ul class="flex items-center gap-6">
 					<li><a href="/leagues" class:text-blue-600={isActive('/leagues')}>Leagues</a></li>
 					<li><a href="/import" class:text-blue-600={isActive('/import')}>Import</a></li>
-					<li><a href="/draft" class:text-blue-600={isActive('/draft')}>Live Draft</a></li>
+					<li><a href="/draft" class:text-blue-600={page.url.pathname === '/draft'}>Live Draft</a></li>
+					<li><a href="/draft/history" class:text-blue-600={isActive('/draft/history')}>Draft History</a></li>
 				</ul>
 			</div>
 		</div>
