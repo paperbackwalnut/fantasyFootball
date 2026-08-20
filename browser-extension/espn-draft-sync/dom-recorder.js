@@ -13,15 +13,18 @@ let extensionContextAlive = true;
 
 function safeRuntimeMessage(message) {
   if (!extensionContextAlive) return Promise.resolve(null);
-  try {
-    return chrome.runtime.sendMessage(message).catch((error) => {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        const error = chrome.runtime.lastError;
+        if (error && /extension context invalidated/i.test(error.message ?? '')) extensionContextAlive = false;
+        resolve(error ? null : response ?? null);
+      });
+    } catch (error) {
       if (/extension context invalidated/i.test(String(error))) extensionContextAlive = false;
-      return null;
-    });
-  } catch (error) {
-    if (/extension context invalidated/i.test(String(error))) extensionContextAlive = false;
-    return Promise.resolve(null);
-  }
+      resolve(null);
+    }
+  });
 }
 
 function safelyRun(task) {
