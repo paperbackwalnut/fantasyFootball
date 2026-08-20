@@ -9,6 +9,27 @@ const selectors = [
 
 let lastFingerprint = '';
 let timer = null;
+let extensionContextAlive = true;
+
+function safeRuntimeMessage(message) {
+  if (!extensionContextAlive) return Promise.resolve(null);
+  try {
+    return chrome.runtime.sendMessage(message).catch((error) => {
+      if (/extension context invalidated/i.test(String(error))) extensionContextAlive = false;
+      return null;
+    });
+  } catch (error) {
+    if (/extension context invalidated/i.test(String(error))) extensionContextAlive = false;
+    return Promise.resolve(null);
+  }
+}
+
+function safelyRun(task) {
+  if (!extensionContextAlive) return;
+  void Promise.resolve().then(task).catch((error) => {
+    if (/extension context invalidated/i.test(String(error))) extensionContextAlive = false;
+  });
+}
 
 function collectDraftBoard() {
   const candidates = [];
@@ -32,7 +53,7 @@ function collectDraftBoard() {
   const fingerprint = JSON.stringify(candidates);
   if (!candidates.length || fingerprint === lastFingerprint) return;
   lastFingerprint = fingerprint;
-  chrome.runtime.sendMessage({
+  void safeRuntimeMessage({
     type: 'DOM_SNAPSHOT',
     snapshot: {
       url: location.href,
@@ -40,7 +61,7 @@ function collectDraftBoard() {
       candidateCount: candidates.length,
       candidates
     }
-  }).catch(() => {});
+  });
 }
 
 function scheduleCollection() {
@@ -68,7 +89,7 @@ let lastReconcileSentAt = 0;
 let lastObservedAvailablePlayers = [];
 
 function sendContentHeartbeat() {
-  void chrome.runtime.sendMessage({ type: 'CONTENT_HEARTBEAT', url: location.href }).catch(() => {});
+  void safeRuntimeMessage({ type: 'CONTENT_HEARTBEAT', url: location.href });
 }
 
 sendContentHeartbeat();
@@ -205,7 +226,7 @@ async function reconcile() {
 	const heartbeatDue = Date.now() - lastReconcileSentAt >= 10000;
 	if (fingerprint !== reconcileFingerprint || heartbeatDue) {
       reconcileFingerprint = fingerprint;
-      await chrome.runtime.sendMessage({ type: 'DOM_SNAPSHOT', snapshot }).catch(() => {});
+      await safeRuntimeMessage({ type: 'DOM_SNAPSHOT', snapshot });
       lastReconcileSentAt = Date.now();
     }
   } finally {
@@ -216,7 +237,7 @@ async function reconcile() {
 
 function scheduleReconcile(delay = 350) {
   clearTimeout(reconcileTimer);
-  reconcileTimer = setTimeout(() => void reconcile(), delay);
+  reconcileTimer = setTimeout(() => safelyRun(reconcile), delay);
 }
 
 new MutationObserver(() => scheduleReconcile()).observe(document.documentElement, {
@@ -228,18 +249,18 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('online', () => scheduleReconcile(0));
 window.addEventListener('pageshow', () => scheduleReconcile(0));
 scheduleReconcile(1000);
-setInterval(() => void reconcile(), 3000);
+setInterval(() => safelyRun(reconcile), 3000);
 
 let lastDraftCommand = null;
 async function checkDraftCommand() {
-  const response = await chrome.runtime.sendMessage({ type: 'CHECK_DRAFT_COMMAND' }).catch(() => null);
+  const response = await safeRuntimeMessage({ type: 'CHECK_DRAFT_COMMAND' });
   const command = response?.command;
   if (!command || command.id === lastDraftCommand) return;
   lastDraftCommand = command.id;
 	showDraftToast(`Drafting ${command.playerName}…`, 'pending');
   const result = await executeDraftCommand(command);
 	showDraftToast(result.message, result.ok ? 'success' : 'error');
-  await chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_COMMAND', result: { commandId: command.id, ...result } }).catch(() => {});
+  await safeRuntimeMessage({ type: 'REPORT_DRAFT_COMMAND', result: { commandId: command.id, ...result } });
 }
 
 function showDraftToast(message, status) {
@@ -328,5 +349,5 @@ async function confirmDraftAccepted(playerName, beforePick) {
   return { ok: false, message: `ESPN did not confirm ${playerName}; the click may not have registered` };
 }
 
-setInterval(() => void checkDraftCommand(), 1000);
-void checkDraftCommand();
+setInterval(() => safelyRun(checkDraftCommand), 1000);
+safelyRun(checkDraftCommand);

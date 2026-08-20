@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ESPN Draft Sync Recorder",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Automatically synchronizes ESPN draft history with a local draft assistant.",
   "permissions": ["activeTab", "storage", "unlimitedStorage", "debugger"],
   "host_permissions": [
