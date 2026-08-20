@@ -1,6 +1,9 @@
 const ids = ["build", "status", "connect", "disconnect", "endpoint", "token", "retainLimit", "save", "flush", "export", "clear", "details"];
 const elements = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
-const send = (type, extra = {}) => chrome.runtime.sendMessage({ type, ...extra });
+const send = (type, extra = {}) => Promise.race([
+  chrome.runtime.sendMessage({ type, ...extra }),
+  new Promise((_, reject) => setTimeout(() => reject(new Error('Extension background process did not respond')), 5000))
+]);
 
 async function refresh() {
   elements.build.textContent = `Build ${chrome.runtime.getManifest().version} · recommendation audit`;
@@ -21,7 +24,12 @@ async function refresh() {
   elements.status.className = `status ${isEspnDraft ? "connected" : ""}`;
   elements.connect.disabled = attached;
   elements.disconnect.disabled = !attached;
-  elements.details.textContent = JSON.stringify({ automaticSync: isEspnDraft, networkDiagnostics: attached, observations: status.observationCount, lastObservationAt: status.lastObservationAt, delivery: status.delivery, detachReason: status.detachReason }, null, 2);
+  const heartbeatFresh = status.lastContentHeartbeatAt && Date.now() - new Date(status.lastContentHeartbeatAt).getTime() < 8000;
+  if (isEspnDraft && !heartbeatFresh) {
+    elements.status.textContent = "ESPN tab found, but its draft listener is not running. Refresh the ESPN tab once.";
+    elements.status.className = "status error";
+  }
+  elements.details.textContent = JSON.stringify({ automaticSync: isEspnDraft, pageListener: heartbeatFresh ? 'online' : 'offline', networkDiagnostics: attached, observations: status.observationCount, lastObservationAt: status.lastObservationAt, commandPollAt: status.lastCommandPollAt, commandPollError: status.lastCommandPollError, delivery: status.delivery, detachReason: status.detachReason }, null, 2);
 }
 
 elements.connect.addEventListener("click", async () => {
@@ -57,4 +65,10 @@ elements.export.addEventListener("click", async () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 
-await refresh();
+try {
+  await refresh();
+} catch (error) {
+  elements.status.textContent = String(error?.message ?? error);
+  elements.status.className = "status error";
+  elements.details.textContent = "Open chrome://extensions, find ESPN Draft Sync Recorder, and check Errors if this persists.";
+}

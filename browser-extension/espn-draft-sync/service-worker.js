@@ -9,6 +9,9 @@ const DEFAULT_SETTINGS = {
 let attachedTabId = null;
 let sequence = 0;
 let flushTimer = null;
+let lastContentHeartbeatAt = null;
+let lastCommandPollAt = null;
+let lastCommandPollError = null;
 const pending = [];
 const requestUrls = new Map();
 const stateReady = chrome.storage.local.get(["attachedTabId", "pendingDelivery"]).then((stored) => {
@@ -29,6 +32,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     CONNECT: () => connect(message.tabId),
     DISCONNECT: () => disconnect(),
     GET_STATUS: () => getStatus(),
+    CONTENT_HEARTBEAT: async () => {
+      lastContentHeartbeatAt = new Date().toISOString();
+      await chrome.storage.local.set({ lastContentHeartbeatAt });
+      return { ok: true };
+    },
     SAVE_SETTINGS: () => saveSettings(message.settings),
     DOM_SNAPSHOT: async () => {
       const snapshot = message.snapshot ?? {};
@@ -273,9 +281,21 @@ async function flush() {
 async function checkDraftCommand() {
   const { settings = DEFAULT_SETTINGS } = await chrome.storage.local.get('settings');
   if (!settings.endpoint || !settings.token) return { command: null };
-  const response = await fetch(commandEndpoint(settings.endpoint), { headers: { 'x-espn-sync-token': settings.token } });
-  if (!response.ok) return { command: null };
-  return response.json();
+  lastCommandPollAt = new Date().toISOString();
+  try {
+    const response = await fetch(commandEndpoint(settings.endpoint), {
+      headers: { 'x-espn-sync-token': settings.token },
+      signal: AbortSignal.timeout(4000)
+    });
+    if (!response.ok) throw new Error(`Local command receiver returned ${response.status}`);
+    lastCommandPollError = null;
+    await chrome.storage.local.set({ lastCommandPollAt, lastCommandPollError });
+    return response.json();
+  } catch (error) {
+    lastCommandPollError = String(error);
+    await chrome.storage.local.set({ lastCommandPollAt, lastCommandPollError });
+    return { command: null, error: lastCommandPollError };
+  }
 }
 
 async function reportDraftCommand(result) {
@@ -295,14 +315,17 @@ async function setDelivery(ok, error) {
 
 async function getStatus() {
   await stateReady;
-  const stored = await chrome.storage.local.get(["settings", "observations", "delivery", "lastObservationAt", "detachReason"]);
+  const stored = await chrome.storage.local.get(["settings", "observations", "delivery", "lastObservationAt", "detachReason", "lastContentHeartbeatAt", "lastCommandPollAt", "lastCommandPollError"]);
   return {
     ok: true, attachedTabId,
     settings: { ...DEFAULT_SETTINGS, ...(stored.settings ?? {}) },
     observationCount: stored.observations?.length ?? 0,
     lastObservationAt: stored.lastObservationAt ?? null,
     delivery: stored.delivery ?? null,
-    detachReason: stored.detachReason ?? null
+    detachReason: stored.detachReason ?? null,
+    lastContentHeartbeatAt: stored.lastContentHeartbeatAt ?? lastContentHeartbeatAt,
+    lastCommandPollAt: stored.lastCommandPollAt ?? lastCommandPollAt,
+    lastCommandPollError: stored.lastCommandPollError ?? lastCommandPollError
   };
 }
 

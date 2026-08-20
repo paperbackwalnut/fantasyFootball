@@ -67,6 +67,13 @@ let reconcileTimer = null;
 let lastReconcileSentAt = 0;
 let lastObservedAvailablePlayers = [];
 
+function sendContentHeartbeat() {
+  void chrome.runtime.sendMessage({ type: 'CONTENT_HEARTBEAT', url: location.href }).catch(() => {});
+}
+
+sendContentHeartbeat();
+setInterval(sendContentHeartbeat, 3000);
+
 const tidy = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
 
 function espnPlayerId(el) {
@@ -196,8 +203,7 @@ async function reconcile() {
     const snapshot = fullDraftState();
     const fingerprint = JSON.stringify(snapshot);
 	const heartbeatDue = Date.now() - lastReconcileSentAt >= 10000;
-    if ((snapshot.teams.length || snapshot.historyPicks.length || snapshot.activityPicks.length)
-        && (fingerprint !== reconcileFingerprint || heartbeatDue)) {
+	if (fingerprint !== reconcileFingerprint || heartbeatDue) {
       reconcileFingerprint = fingerprint;
       await chrome.runtime.sendMessage({ type: 'DOM_SNAPSHOT', snapshot }).catch(() => {});
       lastReconcileSentAt = Date.now();
