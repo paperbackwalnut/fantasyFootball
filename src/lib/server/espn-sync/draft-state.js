@@ -132,6 +132,57 @@ export function reduceDraftSnapshot(snapshot, catalog, capturedAt) {
 	};
 }
 
+/**
+ * ESPN briefly unmounts portions of the draft room while changing turns. Those
+ * transient snapshots must never replace an established board with an empty
+ * one. A different ESPN draft identity is still allowed to start from zero.
+ * @param {Record<string, any> | null | undefined} previous
+ * @param {Record<string, any>} incoming
+ */
+export function reconcileDraftState(previous, incoming) {
+	if (!previous || !sameDraft(previous.draftUrl, incoming.draftUrl)) return incoming;
+	const previousPicks = Array.isArray(previous.picks) ? previous.picks : [];
+	const incomingPicks = Array.isArray(incoming.picks) ? incoming.picks : [];
+	const previousCurrent = Number(previous.currentPick) || previousPicks.length + 1;
+	const incomingCurrent = Number(incoming.currentPick) || incomingPicks.length + 1;
+	const regressed = incomingPicks.length < previousPicks.length || incomingCurrent < previousCurrent;
+	if (!regressed) return incoming;
+
+	return {
+		...previous,
+		updatedAt: incoming.updatedAt ?? previous.updatedAt,
+		preDraft: false,
+		userIsOnTheClock: Boolean(incoming.userIsOnTheClock),
+		espnObservedAvailable: incoming.espnObservedAvailable?.length
+			? incoming.espnObservedAvailable
+			: previous.espnObservedAvailable,
+		sync: {
+			...(previous.sync ?? {}),
+			status: 'live',
+			transientRegressionIgnored: true,
+			incomingPickCount: incomingPicks.length
+		}
+	};
+}
+
+/** @param {unknown} left @param {unknown} right */
+function sameDraft(left, right) {
+	try {
+		const a = new URL(String(left));
+		const b = new URL(String(right));
+		const aLeague = a.searchParams.get('leagueId');
+		const bLeague = b.searchParams.get('leagueId');
+		if (aLeague && bLeague) {
+			return a.origin === b.origin && a.pathname === b.pathname
+				&& aLeague === bLeague
+				&& a.searchParams.get('seasonId') === b.searchParams.get('seasonId');
+		}
+		return a.href === b.href;
+	} catch {
+		return Boolean(left && right && String(left) === String(right));
+	}
+}
+
 /** @param {unknown} url */
 function safeTeamId(url) { try { return typeof url === 'string' ? new URL(url).searchParams.get('teamId') : null; } catch { return null; } }
 /** @param {any[]} picks @param {number} teamCount @param {string | null} userTeamId */

@@ -1,6 +1,6 @@
 import masterPlayers from '$lib/data/master_players_enriched.json';
 import { getDatabase } from '$lib/server/db/database';
-import { reduceDraftSnapshot } from './draft-state.js';
+import { reconcileDraftState, reduceDraftSnapshot } from './draft-state.js';
 import { createHash } from 'node:crypto';
 import { buildDraftAdvice } from '$lib/server/recommendation-engine';
 
@@ -21,10 +21,11 @@ export async function appendObservations(observations: SyncObservation[]) {
 		const authoritative = [...observations].reverse().find(isAuthoritativeSnapshot);
 		if (authoritative) {
 			const incoming = authoritative.data as Record<string, any>;
-			const state = reduceDraftSnapshot({ ...incoming,
+			const reduced = reduceDraftSnapshot({ ...incoming,
 				draftSlotHint: incoming.draftSlotHint ?? previousState?.draftSlotHint ?? null,
 				draftKind: incoming.draftKind === 'UNKNOWN' ? previousState?.draftKind ?? 'UNKNOWN' : incoming.draftKind,
 				roomLabel: incoming.roomLabel ?? previousState?.roomLabel ?? null }, masterPlayers, authoritative.capturedAt);
+			const state = reconcileDraftState(previousState, reduced);
 			latestState = state;
 			saveState.run(authoritative.capturedAt, JSON.stringify(state));
 			if (state.completed) {

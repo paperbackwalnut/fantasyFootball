@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createPlayerIndex, normalizePlayerName, parsePlayerDetail, reduceDraftSnapshot, resolvePlayer } from './draft-state.js';
+import { createPlayerIndex, normalizePlayerName, parsePlayerDetail, reconcileDraftState, reduceDraftSnapshot, resolvePlayer } from './draft-state.js';
 
 const catalog = [
 	{ id: 'a', espn_id: '1', full_name: 'Amon-Ra St. Brown', team_abbr: 'DET', active: 'true' },
@@ -67,4 +67,31 @@ test('infers the user is on the clock from the preserved snake draft slot', () =
 	const teams = Array.from({ length: 10 }, (_, index) => ({ id: String(index + 1), name: `Team ${index + 1}` }));
 	const state = reduceDraftSnapshot({ url: 'https://fantasy.espn.com/football/draft?teamId=7', currentPick: 7, draftSlotHint: 7, teams, historyPicks: [], userIsOnTheClock: false }, catalog, '2026-08-19T12:00:00.000Z');
 	assert.equal(state.userIsOnTheClock, true);
+});
+
+test('does not erase an active board when ESPN temporarily hides pick history', () => {
+	const previous = reduceDraftSnapshot({
+		url: 'https://fantasy.espn.com/football/draft?leagueId=55&seasonId=2026&teamId=8',
+		currentPick: 7,
+		teams: [{ id: '8', name: 'Mine' }, { id: '9', name: 'Other' }],
+		historyPicks: Array.from({ length: 6 }, (_, index) => ({ pick: String(index + 1), name: index ? 'Unknown' : 'Malik Nabers', team: index % 2 ? 'Other' : 'Mine', detail: index ? '' : 'NYG WR' }))
+	}, catalog, '2026-08-19T12:00:00.000Z');
+	const transient = reduceDraftSnapshot({
+		url: 'https://fantasy.espn.com/football/draft?leagueId=55&seasonId=2026&teamId=8',
+		currentPick: null,
+		userIsOnTheClock: true,
+		teams: [],
+		historyPicks: []
+	}, catalog, '2026-08-19T12:00:01.000Z');
+	const reconciled = reconcileDraftState(previous, transient);
+	assert.equal(reconciled.picks.length, 6);
+	assert.equal(reconciled.currentPick, 7);
+	assert.equal(reconciled.userIsOnTheClock, true);
+	assert.equal(reconciled.sync.transientRegressionIgnored, true);
+});
+
+test('allows a different ESPN draft to begin with an empty board', () => {
+	const previous = { draftUrl: 'https://fantasy.espn.com/football/draft?leagueId=55&seasonId=2026', currentPick: 20, picks: Array(19).fill({}) };
+	const incoming = { draftUrl: 'https://fantasy.espn.com/football/draft?leagueId=99&seasonId=2026', currentPick: 1, picks: [] };
+	assert.equal(reconcileDraftState(previous, incoming), incoming);
 });
