@@ -14,9 +14,12 @@ let lastCommandPollAt = null;
 let lastCommandPollError = null;
 const pending = [];
 const requestUrls = new Map();
-const stateReady = chrome.storage.local.get(["attachedTabId", "pendingDelivery"]).then((stored) => {
+const stateReady = chrome.storage.local.get(["attachedTabId"]).then((stored) => {
   attachedTabId = Number.isInteger(stored.attachedTabId) ? stored.attachedTabId : null;
-  if (Array.isArray(stored.pendingDelivery)) pending.push(...stored.pendingDelivery);
+});
+const deliveryReady = stateReady.then(async () => {
+  const stored = await chrome.storage.local.get(["pendingDelivery"]);
+  if (Array.isArray(stored.pendingDelivery)) pending.push(...stored.pendingDelivery.slice(-1000));
   if (pending.length) scheduleFlush(1000);
 });
 
@@ -47,7 +50,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     REPORT_DRAFT_COMMAND: () => reportDraftCommand(message.result),
     CLEAR_CAPTURE: async () => {
       pending.splice(0, pending.length);
-      await chrome.storage.local.set({ observations: [], pendingDelivery: [], delivery: null });
+      await chrome.storage.local.set({ observations: [], observationCount: 0, pendingDelivery: [], delivery: null });
       return { ok: true };
     },
     FLUSH: async () => { await flush(); return getStatus(); }
@@ -242,7 +245,7 @@ async function record(type, data) {
   const stored = await chrome.storage.local.get(["observations", "settings"]);
   const limit = Number(stored.settings?.retainLimit ?? DEFAULT_SETTINGS.retainLimit);
   const observations = [...(stored.observations ?? []), observation].slice(-Math.max(100, limit));
-  await chrome.storage.local.set({ observations, lastObservationAt: observation.capturedAt });
+  await chrome.storage.local.set({ observations, observationCount: observations.length, lastObservationAt: observation.capturedAt });
   scheduleFlush();
 }
 
@@ -252,6 +255,7 @@ function scheduleFlush(delay = 250) {
 }
 
 async function flush() {
+  await deliveryReady;
   if (!pending.length) return;
   const batch = pending.splice(0, 500);
   const { settings = DEFAULT_SETTINGS } = await chrome.storage.local.get("settings");
@@ -269,7 +273,7 @@ async function flush() {
     if (!response.ok) throw new Error(`Local receiver returned ${response.status}`);
     await persistPending();
     await chrome.storage.local.set({ delivery: { ok: true, count: batch.length, at: new Date().toISOString() } });
-    if (pending.length) scheduleFlush(0);
+    if (pending.length) scheduleFlush(500);
   } catch (error) {
     pending.unshift(...batch);
     if (pending.length > 5000) pending.splice(0, pending.length - 5000);
@@ -315,11 +319,11 @@ async function setDelivery(ok, error) {
 
 async function getStatus() {
   await stateReady;
-  const stored = await chrome.storage.local.get(["settings", "observations", "delivery", "lastObservationAt", "detachReason", "lastContentHeartbeatAt", "lastCommandPollAt", "lastCommandPollError"]);
+  const stored = await chrome.storage.local.get(["settings", "observationCount", "delivery", "lastObservationAt", "detachReason", "lastContentHeartbeatAt", "lastCommandPollAt", "lastCommandPollError"]);
   return {
     ok: true, attachedTabId,
     settings: { ...DEFAULT_SETTINGS, ...(stored.settings ?? {}) },
-    observationCount: stored.observations?.length ?? 0,
+    observationCount: Number(stored.observationCount ?? 0),
     lastObservationAt: stored.lastObservationAt ?? null,
     delivery: stored.delivery ?? null,
     detachReason: stored.detachReason ?? null,

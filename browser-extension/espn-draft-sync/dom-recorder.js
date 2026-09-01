@@ -50,7 +50,7 @@ function collectDraftBoard() {
       seen.add(key);
       candidates.push(item);
     }
-    if (candidates.length >= 500) break;
+    if (candidates.length >= 100) break;
   }
 
   const fingerprint = JSON.stringify(candidates);
@@ -72,15 +72,10 @@ function scheduleCollection() {
   timer = setTimeout(collectDraftBoard, 250);
 }
 
-new MutationObserver(scheduleCollection).observe(document.documentElement, {
-  childList: true,
-  subtree: true,
-  attributes: true,
-  attributeFilter: ['data-player-id', 'data-playerid', 'data-athlete-id', 'data-testid', 'class']
-});
-
-scheduleCollection();
-setInterval(collectDraftBoard, 5000);
+// Generic DOM captures are diagnostics only. Running them on every ESPN
+// mutation flooded extension storage and starved authoritative draft updates.
+setTimeout(collectDraftBoard, 5000);
+setInterval(collectDraftBoard, 60000);
 
 // Full-state reconciliation is authoritative; the generic observations above remain
 // useful diagnostics while ESPN changes its markup.
@@ -90,6 +85,7 @@ let reconcileFingerprint = '';
 let reconcileTimer = null;
 let lastReconcileSentAt = 0;
 let lastObservedAvailablePlayers = [];
+let lastHistoryVisitAt = 0;
 
 function sendContentHeartbeat() {
   void safeRuntimeMessage({ type: 'CONTENT_HEARTBEAT', url: location.href });
@@ -216,12 +212,15 @@ async function reconcile() {
   try {
     const active = document.querySelector('.tabs__list__item--active button');
     if (tidy(active) === 'Players') captureVisibleAvailablePlayers();
-    if (!historyTabNames.has(tidy(active)) && !document.querySelector('.pick-history')) {
+    const userIsOnTheClock = /you(?: are|'re|’re) on the clock/i.test(tidy(document.querySelector('.pickArea')));
+    const historyVisitDue = Date.now() - lastHistoryVisitAt >= 4000;
+    if (!userIsOnTheClock && historyVisitDue && !historyTabNames.has(tidy(active)) && !document.querySelector('.pick-history')) {
       const history = document.querySelector('.tabs__list__item:nth-child(2) button');
       if (history) {
         originalTab = active;
+        lastHistoryVisitAt = Date.now();
         history.click();
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 350));
       }
     }
     const snapshot = fullDraftState();
@@ -252,7 +251,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('online', () => scheduleReconcile(0));
 window.addEventListener('pageshow', () => scheduleReconcile(0));
 scheduleReconcile(1000);
-setInterval(() => safelyRun(reconcile), 3000);
+setInterval(() => safelyRun(reconcile), 1500);
 
 let lastDraftCommand = null;
 async function checkDraftCommand() {
