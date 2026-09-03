@@ -69,3 +69,34 @@ test('requires missing DST and kicker when only two roster selections remain', (
 	assert.deepEqual(result.map((player) => player.position).sort(), ['DST', 'K']);
 	assert.match(result[0].reasons.join(' '), /must be filled/);
 });
+
+test('encourages but does not reach for a second quarterback late', () => {
+	const early = recommendPlayers([
+		{ name: 'Backup QB', position: 'QB', consensusRank: 40, adp: 40 },
+		{ name: 'Receiver', position: 'WR', consensusRank: 45, adp: 45 }
+	], { ...context, currentPick: 45, nextUserPick: 56, rosterCounts: { QB: 1, RB: 2, WR: 2 } });
+	assert.equal(early[0].name, 'Receiver');
+	const late = recommendPlayers([
+		{ name: 'Backup QB', position: 'QB', consensusRank: 100, adp: 100 },
+		{ name: 'Receiver', position: 'WR', consensusRank: 100, adp: 100 }
+	], { ...context, currentPick: 105, nextUserPick: 116, rosterCounts: { QB: 1, RB: 4, WR: 4, TE: 1 } });
+	assert.equal(late[0].name, 'Backup QB');
+	assert.match(late[0].reasons.join(' '), /second quarterback/);
+});
+
+test('does not treat NA as an injury and strongly suppresses IR players', () => {
+	const result = recommendPlayers([
+		{ name: 'Healthy Marker', position: 'RB', consensusRank: 50, adp: 50, injuryStatus: 'NA' },
+		{ name: 'IR Player', position: 'RB', consensusRank: 45, adp: 45, injuryStatus: 'IR' }
+	], { ...context, currentPick: 50, nextUserPick: 61 });
+	assert.equal(result[0].name, 'Healthy Marker');
+	assert.doesNotMatch(result[0].reasons.join(' '), /injury risk/);
+});
+
+test('penalizes a backup quarterback with the same bye as the starter', () => {
+	const result = recommendPlayers([
+		{ name: 'Same Bye QB', position: 'QB', consensusRank: 100, adp: 100, byeWeek: 8 },
+		{ name: 'Different Bye QB', position: 'QB', consensusRank: 102, adp: 102, byeWeek: 11 }
+	], { ...context, currentPick: 105, nextUserPick: 116, rosterCounts: { QB: 1 }, rosterByeCounts: { 8: 1 }, rosterPositionByeCounts: { QB: { 8: 1 } } });
+	assert.equal(result[0].name, 'Different Bye QB');
+});

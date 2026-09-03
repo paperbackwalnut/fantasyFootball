@@ -6,7 +6,7 @@
 		catalogId?: string | null; playerName: string; position: string | null; nflTeam: string | null; matchConfidence: string;
 	};
 	type Team = { id: string; name: string; picks: Pick[] };
-	type AvailablePlayer = { id: string; catalogId: string | null; name: string; position?: string | null; nflTeam: string | null; consensusRank?: number | null; positionRank?: number | null; espnDisplayedRank?: number | null; tier?: number | null; adp?: number | null; minPick?: number | null; maxPick?: number | null; projectedPoints?: number | null; pointVorp?: number | null; replacementPoints?: number | null; projectionSourceCount?: number | null; projectionDisagreement?: number | null; injuryStatus?: string | null };
+	type AvailablePlayer = { id: string; catalogId: string | null; name: string; position?: string | null; nflTeam: string | null; byeWeek?: number | null; consensusRank?: number | null; positionRank?: number | null; espnDisplayedRank?: number | null; tier?: number | null; adp?: number | null; minPick?: number | null; maxPick?: number | null; projectedPoints?: number | null; pointVorp?: number | null; replacementPoints?: number | null; projectionSourceCount?: number | null; projectionDisagreement?: number | null; injuryStatus?: string | null };
 	type Recommendation = AvailablePlayer & { recommendationRank: number; recommendationScore: number; availabilityRisk: number; expectedRosterValue?: number | null; rolloutDownside?: number | null; rolloutUpside?: number | null; likelyNextPlayer?: string | null; likelyNextRate?: number | null; reasons: string[]; scoreComponents: Record<string, number> };
 	type MarketSignal = { position: string; active: boolean; lastSix: number; lastTen: number; consecutive: number; overallCount: number; demandMultiple: number; intensity: number };
 	type DraftState = {
@@ -36,13 +36,8 @@
 	let projectionMessage = $state('');
 	let importingProjections = $state(false);
 	let clearingDraft = $state(false);
-	let draftCommandPlayer = $state('');
-	let draftCommandName = $state('');
-	let draftCommandMessage = $state('');
-	let draftCommandSucceeded = $state(false);
-	let draftCommandId = $state('');
-	let draftCommandSentAt = $state(0);
-	let optimisticallyDrafted = $state('');
+	let copiedPlayer = $state('');
+	let copyMessage = $state('');
 
 	const recentPicks = $derived(draft?.picks.slice(-12).reverse() ?? []);
 	const unresolved = $derived(draft?.picks.filter((pick) => !pick.playerId) ?? []);
@@ -52,7 +47,7 @@
 			.filter((player) => !search || `${player.name} ${player.position ?? ''} ${player.nflTeam ?? ''}`.toLowerCase().includes(search.toLowerCase()))
 			.slice(0, 100)
 	);
-	const visibleRecommendations = $derived((draft?.recommendations ?? []).filter((player) => (player.catalogId ?? player.name) !== optimisticallyDrafted));
+	const visibleRecommendations = $derived(draft?.recommendations ?? []);
 	const lastUpdate = $derived(receiver?.lastObservationAt ? new Date(receiver.lastObservationAt) : null);
 	const secondsOld = $derived(lastUpdate ? Math.max(0, Math.floor((now.getTime() - lastUpdate.getTime()) / 1000)) : null);
 	const syncStatus = $derived(error ? 'offline' : secondsOld === null ? 'waiting' : secondsOld < 15 ? 'live' : 'stale');
@@ -65,26 +60,6 @@
 			const payload = await response.json();
 			draft = payload.state;
 			receiver = payload.receiver;
-			const selectedPick = draftCommandName && draft?.picks.some((pick) => pick.catalogId === draftCommandPlayer || pick.playerName.toLowerCase() === draftCommandName.toLowerCase());
-			if (draftCommandId && selectedPick) {
-				draftCommandMessage = `✓ ESPN confirmed ${draftCommandName}.`;
-				draftCommandSucceeded = true;
-				optimisticallyDrafted = draftCommandPlayer;
-				draftCommandId = '';
-				draftCommandPlayer = '';
-			} else if (draftCommandId && draft?.commandBridge?.lastResult?.commandId === draftCommandId) {
-				const result = draft.commandBridge.lastResult;
-				draftCommandMessage = result.ok ? `✓ ${result.message || `ESPN confirmed ${draftCommandName}.`}` : `✕ ${result.message || 'ESPN did not confirm the selection.'}`;
-				draftCommandSucceeded = Boolean(result.ok);
-				if (result.ok) optimisticallyDrafted = draftCommandPlayer;
-				draftCommandId = '';
-				draftCommandPlayer = '';
-			} else if (draftCommandId && Date.now() - draftCommandSentAt > 8000) {
-				draftCommandMessage = `✕ ESPN did not confirm ${draftCommandName} within 8 seconds. The selection was not assumed successful.`;
-				draftCommandSucceeded = false;
-				draftCommandId = '';
-				draftCommandPlayer = '';
-			}
 			if (!selectedTeam && draft?.teams.length) selectedTeam = draft.teams[0].id;
 			error = '';
 			lastSuccessfulPoll = new Date();
@@ -141,7 +116,6 @@
 			const response = await fetch('/api/sync/espn/state', { method: 'DELETE' });
 			if (!response.ok) throw new Error(`Reset returned ${response.status}`);
 			draft = null;
-			optimisticallyDrafted = '';
 			error = '';
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'Could not clear the saved draft';
@@ -150,23 +124,16 @@
 		}
 	}
 
-	async function draftPlayer(player: Recommendation) {
-		if (!confirm(`Send ESPN's Draft click for ${player.name}?`)) return;
-		draftCommandPlayer = player.catalogId ?? player.name;
-		draftCommandName = player.name;
-		draftCommandMessage = '';
-		draftCommandSucceeded = false;
+	async function copyPlayerName(player: Recommendation) {
 		try {
-			const response = await fetch('/api/sync/espn/commands', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ playerId: player.id?.startsWith('catalog:') ? null : player.id, playerName: player.name, position: player.position, nflTeam: player.nflTeam }) });
-			const payload = await response.json().catch(() => ({}));
-			if (!response.ok) throw new Error(payload.message ?? `Draft command returned ${response.status}`);
-			draftCommandId = payload.command.id;
-			draftCommandSentAt = Date.now();
-			draftCommandMessage = `Waiting for ESPN to confirm ${player.name}…`;
+			await navigator.clipboard.writeText(player.name);
+			copiedPlayer = player.catalogId ?? player.name;
+			copyMessage = `Copied ${player.name}. Paste it into ESPN's player search.`;
+			setTimeout(() => {
+				if (copiedPlayer === (player.catalogId ?? player.name)) copiedPlayer = '';
+			}, 2500);
 		} catch (cause) {
-			draftCommandMessage = `✕ ${cause instanceof Error ? cause.message : 'Could not send the draft command'}`;
-			draftCommandSucceeded = false;
-			draftCommandPlayer = '';
+			copyMessage = cause instanceof Error ? `Could not copy: ${cause.message}` : 'Could not copy the player name';
 		}
 	}
 
@@ -245,12 +212,12 @@
 		<section class="rounded-xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm">
 			<div class="flex flex-wrap items-start justify-between gap-3"><div><div class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Independent pick advisor</div><h2 class="mt-1 text-xl font-bold text-indigo-950">Best options right now</h2><p class="mt-1 text-xs text-indigo-800">League-scored projections, replacement value, market survival, roster construction, and guarded two-turn rollouts.</p></div>{#if draft.context.nextUserPick}<div class="rounded-lg bg-white px-3 py-2 text-xs text-gray-600">Planning through pick <strong>{draft.context.nextUserPick}</strong>{#if draft.recommendationRun}<div class="mt-1 text-[10px] text-gray-400">{draft.recommendationRun.modelVersion}{draft.recommendationRun.cached ? ' · cached' : ' · new state'}</div>{/if}</div>{/if}</div>
 			<div class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-xs"><strong class="text-indigo-900">Room trend:</strong><span class="text-gray-700">{draft.market?.summary ?? 'Collecting picks'}</span>{#each (draft.market?.signals ?? []).slice(0, 3) as signal}<span class="rounded-full px-2 py-1" class:bg-amber-100={signal.active} class:text-amber-900={signal.active} class:bg-gray-100={!signal.active}>{signal.position} {signal.lastTen}/10 · {signal.demandMultiple}× room rate</span>{/each}</div>
-			<div class="mt-2 flex items-center gap-2 text-xs" class:text-green-700={draft.commandBridge?.online} class:text-amber-800={!draft.commandBridge?.online}><span class="h-2 w-2 rounded-full" class:bg-green-500={draft.commandBridge?.online} class:bg-amber-500={!draft.commandBridge?.online}></span>{draft.commandBridge?.online ? 'Extension draft-command bridge online' : 'Draft buttons unavailable: reload the extension and refresh the ESPN tab'}</div>
-			{#if draftCommandMessage}<p class="mt-3 rounded-lg border px-3 py-2 text-sm font-semibold" class:border-green-300={draftCommandSucceeded} class:bg-green-50={draftCommandSucceeded} class:text-green-900={draftCommandSucceeded} class:border-red-300={!draftCommandSucceeded} class:bg-red-50={!draftCommandSucceeded} class:text-red-900={!draftCommandSucceeded}>{draftCommandMessage}</p>{/if}
+			<p class="mt-2 text-xs text-gray-600">Copy a recommendation, then paste it into ESPN's player search.</p>
+			{#if copyMessage}<p class="mt-3 rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm font-semibold text-green-900">{copyMessage}</p>{/if}
 			{#if visibleRecommendations.length}
 				<div class="mt-4 grid gap-3 lg:grid-cols-3">
 					{#each visibleRecommendations.slice(0, 6) as player}
-						<div class="rounded-xl border border-indigo-100 bg-white p-4"><div class="flex items-start gap-3"><span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-700 text-sm font-bold text-white">{player.recommendationRank}</span><div class="min-w-0 flex-1"><div class="truncate font-bold">{player.name}</div><div class="text-xs text-gray-500">{player.position ?? '—'} · {player.nflTeam ?? 'FA'} · ECR {player.consensusRank?.toFixed(1) ?? '—'} · ADP {player.adp?.toFixed(1) ?? '—'}{player.espnDisplayedRank ? ` · ESPN #${Math.round(player.espnDisplayedRank)}` : ''}</div>{#if player.pointVorp != null}<div class="mt-1 text-[11px] font-semibold text-indigo-700">{player.pointVorp.toFixed(1)} points above replacement · {player.projectionSourceCount ?? 0} source{player.projectionSourceCount === 1 ? '' : 's'}</div>{/if}</div></div><ul class="mt-3 space-y-1 text-xs text-gray-700">{#each player.reasons as reason}<li>• {reason}</li>{/each}</ul>{#if player.expectedRosterValue != null}<div class="mt-2 rounded bg-indigo-50 px-2 py-1 text-[11px] text-indigo-900">Two-turn value {player.expectedRosterValue} · range {player.rolloutDownside}–{player.rolloutUpside}{#if player.likelyNextPlayer} · likely next: {player.likelyNextPlayer}{/if}</div>{/if}<details class="mt-2 text-[11px] text-gray-500"><summary class="cursor-pointer">Score {player.recommendationScore.toFixed(1)} breakdown</summary><div class="mt-1 flex flex-wrap gap-x-2">{#each Object.entries(player.scoreComponents) as [label, value]}<span>{label} {value >= 0 ? '+' : ''}{value}</span>{/each}</div></details>{#if draft.context.nextUserPick && draft.context.nextUserPick > draft.context.currentPick}<div class="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100" title={`${player.availabilityRisk}% estimated chance gone`}><div class="h-full bg-amber-500" style={`width: ${player.availabilityRisk}%`}></div></div><div class="mt-1 text-[11px] text-gray-500">{player.availabilityRisk}% estimated chance gone by next turn</div>{/if}{#if draft.userIsOnTheClock}<button type="button" onclick={() => draftPlayer(player)} disabled={Boolean(draftCommandPlayer) || !draft.commandBridge?.online} class="mt-3 w-full rounded-lg bg-indigo-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{draftCommandPlayer === (player.catalogId ?? player.name) ? 'Sending…' : `Draft ${player.name}`}</button>{/if}</div>
+						<div class="rounded-xl border border-indigo-100 bg-white p-4"><div class="flex items-start gap-3"><span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-700 text-sm font-bold text-white">{player.recommendationRank}</span><div class="min-w-0 flex-1"><div class="truncate font-bold">{player.name}</div><div class="text-xs text-gray-500">{player.position ?? '—'} · {player.nflTeam ?? 'FA'}{player.byeWeek ? ` · Bye ${player.byeWeek}` : ''} · ECR {player.consensusRank?.toFixed(1) ?? '—'} · ADP {player.adp?.toFixed(1) ?? '—'}{player.espnDisplayedRank ? ` · ESPN #${Math.round(player.espnDisplayedRank)}` : ''}</div>{#if player.pointVorp != null}<div class="mt-1 text-[11px] font-semibold text-indigo-700">{player.pointVorp.toFixed(1)} points above replacement · {player.projectionSourceCount ?? 0} source{player.projectionSourceCount === 1 ? '' : 's'}</div>{/if}</div></div><ul class="mt-3 space-y-1 text-xs text-gray-700">{#each player.reasons as reason}<li>• {reason}</li>{/each}</ul>{#if player.expectedRosterValue != null}<div class="mt-2 rounded bg-indigo-50 px-2 py-1 text-[11px] text-indigo-900">Two-turn value {player.expectedRosterValue} · range {player.rolloutDownside}–{player.rolloutUpside}{#if player.likelyNextPlayer} · likely next: {player.likelyNextPlayer}{/if}</div>{/if}<details class="mt-2 text-[11px] text-gray-500"><summary class="cursor-pointer">Score {player.recommendationScore.toFixed(1)} breakdown</summary><div class="mt-1 flex flex-wrap gap-x-2">{#each Object.entries(player.scoreComponents) as [label, value]}<span>{label} {value >= 0 ? '+' : ''}{value}</span>{/each}</div></details>{#if draft.context.nextUserPick && draft.context.nextUserPick > draft.context.currentPick}<div class="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100" title={`${player.availabilityRisk}% estimated chance gone`}><div class="h-full bg-amber-500" style={`width: ${player.availabilityRisk}%`}></div></div><div class="mt-1 text-[11px] text-gray-500">{player.availabilityRisk}% estimated chance gone by next turn</div>{/if}<button type="button" onclick={() => copyPlayerName(player)} class="mt-3 w-full rounded-lg bg-indigo-700 px-3 py-2 text-xs font-bold text-white">{copiedPlayer === (player.catalogId ?? player.name) ? 'Copied!' : `Copy ${player.name}`}</button></div>
 					{/each}
 				</div>
 			{:else}<p class="mt-4 rounded-lg bg-white p-4 text-sm text-gray-600">Recommendations appear during an active draft after rankings are loaded.</p>{/if}

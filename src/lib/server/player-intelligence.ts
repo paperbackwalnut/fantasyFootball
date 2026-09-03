@@ -19,7 +19,7 @@ export function ensurePlayerCatalog() {
 		const now = new Date().toISOString();
 		const insert = db.prepare(`INSERT INTO players(id,full_name,normalized_name,position,nfl_team,bye_week,active,espn_id,sleeper_id,fantasypros_id,data_json,updated_at)
 			VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET full_name=excluded.full_name,normalized_name=excluded.normalized_name,
-			position=COALESCE(excluded.position,players.position),nfl_team=excluded.nfl_team,bye_week=excluded.bye_week,active=excluded.active,espn_id=excluded.espn_id,sleeper_id=excluded.sleeper_id,
+			position=COALESCE(excluded.position,players.position),nfl_team=excluded.nfl_team,bye_week=COALESCE(excluded.bye_week,players.bye_week),active=excluded.active,espn_id=excluded.espn_id,sleeper_id=excluded.sleeper_id,
 			fantasypros_id=excluded.fantasypros_id,updated_at=excluded.updated_at`);
 		db.transaction(() => {
 			for (const raw of masterPlayers as MasterPlayer[]) {
@@ -62,7 +62,7 @@ export function intelligenceSummary(seasonYear: number) {
 	return { catalog, valueSources: values, news };
 }
 
-export function rankedAvailablePlayers(seasonYear: number, teamCount: number, draftedPicks: Array<{ catalogId?: string | null; playerName?: string | null }>, espnObserved: Array<{ espnPlayerId?: string | null; name?: string | null; displayedRank?: number | null; projectedPoints?: number | null; capturedAt?: string | null }> = [], scoring: any = null) {
+export function rankedAvailablePlayers(seasonYear: number, teamCount: number, draftedPicks: Array<{ catalogId?: string | null; playerName?: string | null; position?: string | null; nflTeam?: string | null }>, espnObserved: Array<{ espnPlayerId?: string | null; name?: string | null; displayedRank?: number | null; projectedPoints?: number | null; byeWeek?: number | null; capturedAt?: string | null }> = [], scoring: any = null) {
 	ensurePlayerCatalog();
 	const db = getDatabase();
 	const rows = db.prepare(`SELECT p.id catalogId,p.espn_id id,p.full_name name,p.position,p.nfl_team nflTeam,p.bye_week byeWeek,
@@ -86,11 +86,14 @@ export function rankedAvailablePlayers(seasonYear: number, teamCount: number, dr
 	}
 	const drafted = new Set(draftedPicks.map((pick) => pick.catalogId).filter(Boolean));
 	const draftedNames = new Set(draftedPicks.map((pick) => normalizePlayerName(pick.playerName)).filter(Boolean));
+	const draftedPositionTeams = new Set(draftedPicks.filter((pick) => pick.position && pick.nflTeam).map((pick) => `${pick.position}:${String(pick.nflTeam).toUpperCase()}`));
 	const observedIds = new Set(espnObserved.map((player) => String(player.espnPlayerId ?? '')).filter(Boolean));
 	const observedNames = new Set(espnObserved.map((player) => normalizePlayerName(player.name)).filter(Boolean));
 	const observedById = new Map(espnObserved.filter((player) => player.espnPlayerId).map((player) => [String(player.espnPlayerId), player]));
 	const observedByName = new Map(espnObserved.filter((player) => player.name).map((player) => [normalizePlayerName(player.name), player]));
-	return rows.filter((row) => !drafted.has(row.catalogId) && !draftedNames.has(normalizePlayerName(row.name))).map((row) => {
+	const updateBye = db.prepare('UPDATE players SET bye_week=?, updated_at=? WHERE id=? AND (bye_week IS NULL OR bye_week<>?)');
+	const observedAt = new Date().toISOString();
+	return rows.filter((row) => !drafted.has(row.catalogId) && !draftedNames.has(normalizePlayerName(row.name)) && !draftedPositionTeams.has(`${row.position}:${String(row.nflTeam ?? '').toUpperCase()}`)).map((row) => {
 		const ranking = JSON.parse(row.rankingJson ?? '{}');
 		const adp = JSON.parse(row.adpJson ?? '{}');
 		const projectionSources = projectionsByPlayer.get(row.catalogId) ?? [];
@@ -100,6 +103,8 @@ export function rankedAvailablePlayers(seasonYear: number, teamCount: number, dr
 			return { ...projection, points: rescored?.points ?? Number(projection.projected_points), scoringBasis: rescored ? 'ESPN_RULES' : 'SOURCE_TOTAL' };
 		});
 		const espn = observedById.get(String(row.id)) ?? observedByName.get(normalizePlayerName(row.name));
+		const observedBye = Number(espn?.byeWeek);
+		if (Number.isInteger(observedBye) && observedBye > 0) updateBye.run(observedBye, observedAt, row.catalogId, observedBye);
 		if (espn?.projectedPoints != null && Number.isFinite(Number(espn.projectedPoints))) normalizedSources.push({ source: 'espn-draft-room', points: Number(espn.projectedPoints), scoringBasis: 'ESPN_ROOM', fetched_at: espn?.capturedAt ?? null });
 		const compatibleSources = scoring?.format && scoring.format !== 'PPR' && normalizedSources.some((projection) => projection.scoringBasis === 'ESPN_ROOM')
 			? normalizedSources.filter((projection) => ['ESPN_ROOM', 'ESPN_RULES'].includes(projection.scoringBasis)) : normalizedSources;
@@ -110,7 +115,7 @@ export function rankedAvailablePlayers(seasonYear: number, teamCount: number, dr
 		return { id: row.id ?? `catalog:${row.catalogId}`, catalogId: row.catalogId, name: row.name, position: row.position,
 			espnVerified: observedIds.has(String(row.id)) || observedNames.has(normalizePlayerName(row.name)),
 			espnDisplayedRank: Number.isFinite(Number(espn?.displayedRank)) ? Number(espn?.displayedRank) : null,
-			nflTeam: row.nflTeam, byeWeek: row.byeWeek, consensusRank: row.consensusRank, positionRank: row.positionRank,
+			nflTeam: row.nflTeam, byeWeek: Number.isInteger(observedBye) && observedBye > 0 ? observedBye : row.byeWeek, consensusRank: row.consensusRank, positionRank: row.positionRank,
 			tier: row.tier, rankUncertainty: ranking.sd ?? null, rankDelta: ranking.rankDelta ?? null, adp: row.adp,
 			projectedPoints, projectionSourceCount: projectionValues.length, projectionDisagreement: disagreement,
 			projectionSources: compatibleSources.map((projection) => ({ source: projection.source, points: projection.points, scoringBasis: projection.scoringBasis, fetchedAt: projection.fetched_at })),

@@ -7,7 +7,7 @@ import { recommendPlayers } from '$lib/server/recommendations.js';
 import { applyLeagueValuation } from '$lib/server/valuation.js';
 import { runShortHorizonRollouts } from '$lib/server/draft-rollout.js';
 
-const MODEL_VERSION = 'draft-advisor-2.0.2';
+const MODEL_VERSION = 'draft-advisor-2.1.0';
 
 export function draftStateHash(draft: any) {
 	return hash(JSON.stringify({ url: draft?.draftUrl, currentPick: draft?.currentPick, completed: draft?.completed, onClock: draft?.userIsOnTheClock, rosterSizeHint: draft?.rosterSizeHint,
@@ -23,7 +23,8 @@ export function buildDraftAdvice(draft: any) {
 	const externalId = url?.searchParams.get('leagueId');
 	const seasonYear = Number(url?.searchParams.get('seasonId')) || new Date().getFullYear();
 	const importedLeague = externalId ? db.prepare('SELECT * FROM leagues WHERE platform=? AND external_id=? AND season_year=?').get('ESPN', externalId, seasonYear) : null;
-	const context = deriveLeagueContext(draft, importedLeague);
+	const baseContext = deriveLeagueContext(draft, importedLeague);
+	const context = { ...baseContext, ...deriveRosterByeContext(db, draft, baseContext.userTeamId) };
 	const stateHash = draftStateHash(draft);
 	const manifest = ensureManifest(context, seasonYear);
 	const existing = db.prepare(`SELECT id FROM recommendation_runs WHERE platform='ESPN' AND state_hash=? AND model_manifest_id=?`).get(stateHash, manifest.id) as { id: string } | undefined;
@@ -68,6 +69,24 @@ function projectionConfidence(player: any) {
 	const count = Number(player.projectionSourceCount ?? 0);
 	const disagreement = Number(player.projectionDisagreement ?? 0);
 	return Math.max(0.15, Math.min(0.95, 0.35 + count * 0.12 - disagreement / 250 + (player.espnVerified ? 0.08 : 0)));
+}
+
+function deriveRosterByeContext(db: any, draft: any, userTeamId: string | null) {
+	const userTeam = (draft.teams ?? []).find((team: any) => String(team.id) === String(userTeamId));
+	const byes: Record<string, number> = {};
+	const positionByes: Record<string, Record<string, number>> = {};
+	const lookup = db.prepare('SELECT position,bye_week byeWeek FROM players WHERE id=?');
+	for (const pick of userTeam?.picks ?? []) {
+		if (!pick.catalogId) continue;
+		const player = lookup.get(pick.catalogId) as { position?: string | null; byeWeek?: number | null } | undefined;
+		const bye = Number(player?.byeWeek);
+		const position = player?.position ?? pick.position;
+		if (!Number.isInteger(bye) || bye <= 0 || !position) continue;
+		byes[String(bye)] = (byes[String(bye)] ?? 0) + 1;
+		positionByes[position] ??= {};
+		positionByes[position][String(bye)] = (positionByes[position][String(bye)] ?? 0) + 1;
+	}
+	return { rosterByeCounts: byes, rosterPositionByeCounts: positionByes };
 }
 
 function hash(value: string) { return createHash('sha256').update(value).digest('hex'); }

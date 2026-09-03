@@ -134,6 +134,7 @@ function captureVisibleAvailablePlayers() {
       espnPlayerId: espnPlayerId(row), name: tidy(nameElement), detail: tidy(row),
       displayedRank: numeric(valueFor('RK', 'RANK') ?? cells[0]),
 	  projectedPoints: numeric(valueFor('FPTS', 'PROJ', 'PROJECTED')),
+	  byeWeek: numeric(valueFor('BYE')),
 	  captureColumns: cells.slice(0, 24)
     };
     if (item.name) found.set(item.espnPlayerId ? `id:${item.espnPlayerId}` : `name:${item.name.toLowerCase()}`, item);

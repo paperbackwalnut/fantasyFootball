@@ -9,7 +9,7 @@ Local-first fantasy football tooling focused first on reliable ESPN live-draft s
 - Automatic ESPN draft capture from the complete Pick History in the draft-room DOM
 - Pre-draft initialization with team, slot, full player pool, and recommendations before pick 1
 - Safe live-draft snapshot reset between mocks without deleting player intelligence or league data
-- Confirmed one-click draft requests from recommendation cards through the bundled extension (exact visible-player verification)
+- One-click copying of recommendation names for fast paste into ESPN player search
 - Ten-second authoritative extension heartbeat to distinguish a quiet draft from a disconnected sync
 - Live positional-run detection and recent room-demand trends, used as a bounded recommendation signal
 - No manual debugger attachment required for normal synchronization
@@ -32,7 +32,7 @@ Local-first fantasy football tooling focused first on reliable ESPN live-draft s
 - Automatic completed-draft archive plus recommendation-run audit in Draft History
 - Automatic freshness coordinator with per-provider health, last-good fallback, and concurrent refresh suppression
 - Watched projection folder at `.data/imports/projections` using `source--season--format.csv`; successful files are archived after import
-- ESPN displayed rank and room-scored FPTS capture for platform-aware availability estimates
+- ESPN displayed rank, room-scored FPTS, and bye-week capture for platform-aware advice
 
 ### Foundation present, data feeds not connected yet
 
@@ -95,7 +95,7 @@ The development server listens at `http://127.0.0.1:5173` so the Chrome extensio
 2. Enable **Developer mode**.
 3. Choose **Load unpacked**.
 4. Select `browser-extension/espn-draft-sync` from this repository.
-   The popup must show **Build 0.4.7 · recommendation audit**. An older build means Chrome is pointed at the retired standalone checkout.
+   The popup must show **Build 0.4.8 · recommendation audit**. An older build means Chrome is pointed at the retired standalone checkout.
 5. Open the extension popup, set the receiver to `http://127.0.0.1:5173/api/sync/espn/events`, enter the same pairing token, and save.
 
 Normal draft synchronization starts automatically on ESPN draft and mock-draft pages. Network diagnostics are optional and may display Chrome's debugger notification; they are not needed for ordinary draft capture.

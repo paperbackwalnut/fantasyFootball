@@ -6,7 +6,7 @@ This repository is a personal, local-first fantasy-football assistant. Read `REA
 
 1. Reliable ESPN live-draft synchronization, including pre-draft state and every pick.
 2. Explainable, league-aware live pick recommendations using current projections, ADP, roster construction, injuries/news, positional scarcity, room behavior, and next-turn availability.
-3. Reliable one-click ESPN drafting with visible pending/success/failure confirmation.
+3. Fast clipboard-assisted ESPN player selection from recommendation cards.
 4. Draft archive and postmortem tools.
 5. League import, then weekly start/sit. Sleeper live drafting comes after ESPN is stable.
 
@@ -19,7 +19,7 @@ Do not reintroduce Supabase. Runtime state belongs in local SQLite with backup/r
 - ESPN state reducer and recommendation engine: `src/lib/server/espn-sync/` and recommendation modules under `src/lib/server/`
 - Bundled unpacked Chrome extension: `browser-extension/espn-draft-sync/`
 - Local runtime data: `.data/` (ignored by Git)
-- Current extension build: **0.4.7**
+- Current extension build: **0.4.8**
 - Expected receiver: `http://127.0.0.1:5173/api/sync/espn/events`
 
 The retired standalone extension checkout at `C:\Users\chris\ffDraftSync` is obsolete. Do not edit or load it. The canonical extension is inside this repository.
@@ -28,14 +28,14 @@ The retired standalone extension checkout at `C:\Users\chris\ffDraftSync` is obs
 
 Recent commits added reproducible league-aware recommendations, automated projection/data imports, missing-projection guards, inferred on-clock state, ESPN drafting confirmation, pre-draft snapshots, listener/command diagnostics, and safe Chrome context shutdown handling.
 
-The immediate validation target is extension build 0.4.7:
+The immediate validation target is extension build 0.4.8:
 
 1. Start the app on port 5173.
 2. Load `browser-extension/espn-draft-sync` unpacked in Chrome.
 3. Set the extension endpoint and the same pairing token as `.env`.
 4. Enter an ESPN mock lobby and then a draft.
 5. Verify the popup reports `pageListener: online`, a recent `commandPollAt`, and `commandPollError: null`.
-6. Verify `/draft` initializes before pick 1, advances on every pick, recognizes the user's turns, and confirms one-click draft commands.
+6. Verify `/draft` initializes before pick 1, advances on every pick, recognizes the user's turns, and copies recommendation names for ESPN search.
 
 When an extension error is reported, first confirm the popup build number and whether Chrome has more than one copy installed. Reloading an unpacked extension invalidates old content scripts; clear errors only after the new build is loaded and the ESPN page is refreshed.
 
@@ -68,7 +68,7 @@ The existing league-import page has known non-blocking accessibility warnings. D
 
 ## Suggested next work
 
-After extension 0.4.7 passes the short mock test:
+After extension 0.4.8 passes the short mock test:
 
 1. Run a complete mock while preserving command reports and recommendation runs.
 2. Perform a postmortem comparing recommendations, selections, available alternatives, roster construction, and command failures.
