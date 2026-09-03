@@ -7,7 +7,7 @@ import { recommendPlayers } from '$lib/server/recommendations.js';
 import { applyLeagueValuation } from '$lib/server/valuation.js';
 import { runShortHorizonRollouts } from '$lib/server/draft-rollout.js';
 
-const MODEL_VERSION = 'draft-advisor-2.1.0';
+const MODEL_VERSION = 'draft-advisor-2.2.0';
 
 export function draftStateHash(draft: any) {
 	return hash(JSON.stringify({ url: draft?.draftUrl, currentPick: draft?.currentPick, completed: draft?.completed, onClock: draft?.userIsOnTheClock, rosterSizeHint: draft?.rosterSizeHint,
@@ -57,8 +57,9 @@ export function buildDraftAdvice(draft: any) {
 function ensureManifest(context: any, seasonYear: number) {
 	const db = getDatabase();
 	const sources = db.prepare('SELECT source,MAX(fetched_at) fetchedAt,COUNT(*) rows FROM player_values WHERE season_year=? GROUP BY source ORDER BY source').all(seasonYear);
+	const injuryInputs = db.prepare('SELECT source,MAX(observed_at) observedAt,COUNT(*) rows FROM injury_events WHERE season_year>=? GROUP BY source ORDER BY source').all(seasonYear - 2);
 	const leagueSettingsHash = hash(JSON.stringify({ scoring: context.scoring, rosterSlots: context.rosterSlots, teamCount: context.teamCount }));
-	const inputs = { seasonYear, sources };
+	const inputs = { seasonYear, sources, injuryInputs };
 	const id = hash(`${MODEL_VERSION}:${leagueSettingsHash}:${JSON.stringify(inputs)}`);
 	db.prepare(`INSERT OR IGNORE INTO model_manifests(id,model_version,league_settings_hash,inputs_json,generated_at) VALUES(?,?,?,?,?)`)
 		.run(id, MODEL_VERSION, leagueSettingsHash, JSON.stringify(inputs), new Date().toISOString());

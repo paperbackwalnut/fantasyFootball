@@ -114,6 +114,17 @@ CREATE TABLE IF NOT EXISTS player_status (
   practice_participation TEXT, depth_chart_position INTEGER, news_updated_at TEXT,
   data_json TEXT, fetched_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS injury_events (
+  id TEXT PRIMARY KEY, player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  source TEXT NOT NULL, source_event_key TEXT NOT NULL, season_year INTEGER,
+  week INTEGER, observed_at TEXT NOT NULL, source_updated_at TEXT,
+  status TEXT, body_part TEXT, secondary_body_part TEXT, practice_status TEXT,
+  estimated_return_date TEXT, actual_return_date TEXT, games_missed REAL,
+  confidence REAL NOT NULL DEFAULT 0.5, data_json TEXT,
+  UNIQUE(source, source_event_key)
+);
+CREATE INDEX IF NOT EXISTS injury_events_player_time ON injury_events(player_id, observed_at DESC);
+CREATE INDEX IF NOT EXISTS injury_events_player_season ON injury_events(player_id, season_year, week);
 CREATE TABLE IF NOT EXISTS player_trends (
   player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
   source TEXT NOT NULL, trend_type TEXT NOT NULL, lookback_hours INTEGER NOT NULL,
@@ -142,6 +153,7 @@ export function getDatabase() {
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(5, ?)').run(new Date().toISOString());
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(6, ?)').run(new Date().toISOString());
 	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(7, ?)').run(new Date().toISOString());
+	instance.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(8, ?)').run(new Date().toISOString());
 	return instance;
 }
 

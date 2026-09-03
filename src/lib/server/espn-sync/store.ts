@@ -1,7 +1,7 @@
 import masterPlayers from '$lib/data/master_players_enriched.json';
 import { getDatabase } from '$lib/server/db/database';
 import { reconcileDraftState, reduceDraftSnapshot } from './draft-state.js';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { buildDraftAdvice } from '$lib/server/recommendation-engine';
 
 export type SyncObservation = { schemaVersion: number; id: string; capturedAt: string; type: string; data: unknown };
@@ -21,6 +21,7 @@ export async function appendObservations(observations: SyncObservation[]) {
 		const authoritative = [...observations].reverse().find(isAuthoritativeSnapshot);
 		if (authoritative) {
 			const incoming = authoritative.data as Record<string, any>;
+			recordEspnInjuries(incoming.injuryObservations, authoritative.capturedAt);
 			const reduced = reduceDraftSnapshot({ ...incoming,
 				draftSlotHint: incoming.draftSlotHint ?? previousState?.draftSlotHint ?? null,
 				rosterSizeHint: incoming.rosterSizeHint ?? previousState?.rosterSizeHint ?? null,
@@ -43,6 +44,39 @@ export async function appendObservations(observations: SyncObservation[]) {
 				ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at`).run(JSON.stringify({ message }), new Date().toISOString());
 		}
 	}
+}
+
+function recordEspnInjuries(observations: unknown, capturedAt: string) {
+	if (!Array.isArray(observations)) return;
+	const db = getDatabase();
+	const byEspn = db.prepare('SELECT id FROM players WHERE espn_id=?');
+	const byName = db.prepare('SELECT id FROM players WHERE normalized_name=? ORDER BY active DESC LIMIT 2');
+	const insert = db.prepare(`INSERT INTO injury_events(id,player_id,source,source_event_key,season_year,observed_at,source_updated_at,status,estimated_return_date,confidence,data_json)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source,source_event_key) DO UPDATE SET data_json=excluded.data_json`);
+	for (const item of observations) {
+		if (!item || typeof item !== 'object') continue;
+		const injury = item as any;
+		let player = injury.espnPlayerId ? byEspn.get(String(injury.espnPlayerId)) as { id: string } | undefined : undefined;
+		if (!player && injury.name) {
+			const matches = byName.all(normalizeName(injury.name)) as { id: string }[];
+			if (matches.length === 1) player = matches[0];
+		}
+		if (!player) continue;
+		const estimatedReturn = parseEspnDate(injury.estimatedReturnDate);
+		const seasonYear = estimatedReturn ? new Date(estimatedReturn).getUTCFullYear() : new Date(capturedAt).getUTCFullYear();
+		const key = createHash('sha256').update(`${player.id}:${injury.injuryStatus ?? ''}:${estimatedReturn ?? ''}`).digest('hex');
+		insert.run(randomUUID(), player.id, 'espn-draft-room', key, seasonYear, capturedAt, capturedAt, injury.injuryStatus ?? null, estimatedReturn, 0.9, JSON.stringify(injury));
+	}
+}
+
+function normalizeName(value: unknown) {
+	return String(value ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[’']/g, '').replace(/\b(?:jr|sr|ii|iii|iv|v)\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+}
+
+function parseEspnDate(value: unknown) {
+	const match = String(value ?? '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+	if (!match) return null;
+	return `${match[3]}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}`;
 }
 
 export async function readSyncStatus(): Promise<SyncStatus> {

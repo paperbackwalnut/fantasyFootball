@@ -5,6 +5,7 @@ import { refreshSleeperPlayers, sleeperRefreshStatus } from '$lib/server/player-
 import { consensusRankingStatus, refreshConsensusRankings } from '$lib/server/player-sources/rankings';
 import { mflAdpStatus, refreshMflAdp } from '$lib/server/player-sources/adp';
 import { importProjectionCsv } from '$lib/server/player-sources/projections';
+import { historicalInjuryStatus, refreshHistoricalInjuries } from '$lib/server/player-sources/injury-history';
 import { projectionFilename } from './data-refresh-utils.js';
 
 export { projectionFilename } from './data-refresh-utils.js';
@@ -29,12 +30,13 @@ export async function refreshPlayerData(options: { force?: boolean; teamCount?: 
 	const teamCount = Number(options.teamCount) || 10;
 	const results: Record<string, unknown> = {};
 	results.watchedImports = await runProvider('watched-projections', () => scanWatchedProjectionImports(), true);
-	const [sleeper, rankings, adp] = await Promise.all([
+	const [sleeper, rankings, adp, injuryHistory] = await Promise.all([
 		runProvider('sleeper', refreshSleeperPlayers, force || isStale(sleeperRefreshStatus())),
 		runProvider('consensus-rankings', refreshConsensusRankings, force || isStale(consensusRankingStatus())),
-		runProvider(`mfl-adp-${teamCount}`, () => refreshMflAdp(teamCount), force || isStale(mflAdpStatus(teamCount)))
+		runProvider(`mfl-adp-${teamCount}`, () => refreshMflAdp(teamCount), force || isStale(mflAdpStatus(teamCount))),
+		runProvider('injury-history', () => refreshHistoricalInjuries(), isStale(historicalInjuryStatus()))
 	]);
-	Object.assign(results, { sleeper, rankings, adp });
+	Object.assign(results, { sleeper, rankings, adp, injuryHistory });
 	return { results, health: providerHealth() };
 }
 

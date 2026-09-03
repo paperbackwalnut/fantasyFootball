@@ -1,7 +1,7 @@
 /** @type {Record<string, number>} */
 const starterTargets = { QB: 1, RB: 2, WR: 2, TE: 1, DST: 1, K: 1 };
 
-/** @typedef {{name:string,position?:string|null,consensusRank?:number|null,adp?:number|null,espnDisplayedRank?:number|null,tier?:number|null,projectedPoints?:number|null,pointVorp?:number|null,replacementPoints?:number|null,projectionSourceCount?:number|null,projectionDisagreement?:number|null,injuryStatus?:string|null,[key:string]:unknown}} Candidate */
+/** @typedef {{name:string,position?:string|null,consensusRank?:number|null,adp?:number|null,espnDisplayedRank?:number|null,tier?:number|null,projectedPoints?:number|null,pointVorp?:number|null,replacementPoints?:number|null,projectionSourceCount?:number|null,projectionDisagreement?:number|null,injuryStatus?:string|null,injuryRiskPenalty?:number|null,injuryRiskReasons?:string[],expectedGamesMissed?:number|null,[key:string]:unknown}} Candidate */
 /** @typedef {{completed?:boolean,currentPick?:number,nextUserPick?:number|null,teamCount?:number,rosterSizeHint?:number|null,rosterCounts?:Record<string,number>,rosterSlots?:Record<string,number>,rosterByeCounts?:Record<string,number>,rosterPositionByeCounts?:Record<string,Record<string,number>>}} DraftContext */
 /** @typedef {{signals?:Array<{position:string,active:boolean,intensity:number,lastSix:number,demandMultiple:number}>}} DraftMarket */
 
@@ -56,7 +56,7 @@ export function recommendPlayers(players, context, market = {}) {
 		const tierDrop = nextAtPosition?.tier != null && player.tier != null && nextAtPosition.tier > player.tier ? 8 : 0;
 		const run = market.signals?.find((signal) => signal.position === position && signal.active);
 		const marketRunBonus = run && rostered < Math.max(1, target) ? Math.round(run.intensity * 8 * 10) / 10 : 0;
-		const injuryPenalty = injuryRiskPenalty(player.injuryStatus);
+		const injuryPenalty = player.injuryRiskPenalty != null ? Number(player.injuryRiskPenalty) : injuryRiskPenalty(player.injuryStatus);
 		const earlySpecialistPenalty = ['K', 'DST'].includes(position) && round < Math.max(10, (context.teamCount || 10) - 1) ? 35 : 0;
 		const qbDepthPenalty = position === 'QB' && rostered >= 1 ? (round < 9 ? 38 : 0) : 0;
 		const qbDepthBonus = position === 'QB' && needsSecondQuarterback && round >= 9 ? (round >= 13 ? 16 : 9) : 0;
@@ -74,7 +74,7 @@ export function recommendPlayers(players, context, market = {}) {
 		if (marketRunBonus && run) reasons.push(`${run.lastSix} ${position}s taken in the last 6 picks`);
 		if (goneBeforeNext >= 0.72 && nextPick > currentPick) reasons.push(`${Math.round(goneBeforeNext * 100)}% estimated chance gone by pick ${nextPick}`);
 		if (player.projectedPoints != null) reasons.push(`${Number(player.projectedPoints).toFixed(1)} projected PPR points`);
-		if (injuryPenalty) reasons.push(`${player.injuryStatus} injury risk applied`);
+		if (injuryPenalty) reasons.push(...(player.injuryRiskReasons?.length ? player.injuryRiskReasons : [`${player.injuryStatus} injury risk applied`]));
 		if (qbDepthBonus) reasons.push(`adds the preferred second quarterback`);
 		if (byePenalty) reasons.push(`bye ${bye} overlaps ${samePositionBye ? `at ${position}` : 'with the roster'}`);
 		if (stalePenalty) reasons.push(`room has passed repeatedly; ranking confidence reduced`);

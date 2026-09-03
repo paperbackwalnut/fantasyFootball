@@ -2,6 +2,7 @@ import masterPlayers from '$lib/data/master_players_enriched.json';
 import { getDatabase } from '$lib/server/db/database';
 import { normalizePlayerName } from '$lib/server/espn-sync/draft-state.js';
 import { scoreProjectionStats } from '$lib/server/projection-scoring.js';
+import { assessInjury } from '$lib/server/injury-intelligence.js';
 
 type MasterPlayer = {
 	id: string; full_name?: string; active?: string | boolean; espn_id?: string; sleeper_id?: string;
@@ -67,7 +68,7 @@ export function rankedAvailablePlayers(seasonYear: number, teamCount: number, dr
 	const db = getDatabase();
 	const rows = db.prepare(`SELECT p.id catalogId,p.espn_id id,p.full_name name,p.position,p.nfl_team nflTeam,p.bye_week byeWeek,
 		r.overall_rank consensusRank,r.position_rank positionRank,r.tier,r.value_json rankingJson,
-		a.adp,a.value_json adpJson,s.status,s.injury_status injuryStatus,s.practice_participation practiceStatus
+		a.adp,a.value_json adpJson,s.status,s.injury_status injuryStatus,s.injury_body_part injuryBodyPart,s.practice_participation practiceStatus
 		FROM player_values r JOIN players p ON p.id=r.player_id
 		LEFT JOIN player_values a ON a.player_id=p.id AND a.season_year=r.season_year AND a.source='myfantasyleague-adp' AND a.scoring_format=?
 		LEFT JOIN player_status s ON s.player_id=p.id
@@ -84,6 +85,16 @@ export function rankedAvailablePlayers(seasonYear: number, teamCount: number, dr
 		if (!values.some((value) => value.source === projection.source)) values.push(projection);
 		projectionsByPlayer.set(projection.player_id, values);
 	}
+	const latestInjuries = new Map((db.prepare(`SELECT event.player_id,event.status,event.body_part injuryBodyPart,event.estimated_return_date estimatedReturnDate,event.source,event.observed_at
+		FROM injury_events event JOIN (SELECT player_id,MAX(observed_at) observed_at FROM injury_events WHERE season_year=? GROUP BY player_id) latest
+		ON latest.player_id=event.player_id AND latest.observed_at=event.observed_at WHERE event.season_year=?`).all(seasonYear, seasonYear) as any[]).map((row) => [row.player_id, row]));
+	const history = new Map((db.prepare(`SELECT player_id,COUNT(DISTINCT season_year||':'||COALESCE(week,'')) careerInjuryWeeks,
+		SUM(CASE WHEN season_year>=? THEN 1 ELSE 0 END) recentInjuryWeeks,
+		SUM(CASE WHEN season_year>=? AND games_missed>0 THEN games_missed ELSE 0 END) recentOutWeeks
+		FROM injury_events WHERE source='nflverse-injuries' GROUP BY player_id`).all(seasonYear - 2, seasonYear - 2) as any[]).map((row) => [row.player_id, row]));
+	const historyByBody = new Map((db.prepare(`SELECT player_id,LOWER(body_part) bodyPart,COUNT(DISTINCT season_year||':'||COALESCE(week,'')) weeks
+		FROM injury_events WHERE source='nflverse-injuries' AND season_year>=? AND body_part IS NOT NULL GROUP BY player_id,LOWER(body_part)`).all(seasonYear - 2) as any[])
+		.map((row) => [`${row.player_id}:${row.bodyPart}`, Number(row.weeks)]));
 	const drafted = new Set(draftedPicks.map((pick) => pick.catalogId).filter(Boolean));
 	const draftedNames = new Set(draftedPicks.map((pick) => normalizePlayerName(pick.playerName)).filter(Boolean));
 	const draftedPositionTeams = new Set(draftedPicks.filter((pick) => pick.position && pick.nflTeam).map((pick) => `${pick.position}:${String(pick.nflTeam).toUpperCase()}`));
@@ -100,9 +111,16 @@ export function rankedAvailablePlayers(seasonYear: number, teamCount: number, dr
 		const normalizedSources = projectionSources.map((projection) => {
 			const metadata = JSON.parse(projection.value_json ?? '{}');
 			const rescored = scoreProjectionStats(metadata.stats, scoring);
-			return { ...projection, points: rescored?.points ?? Number(projection.projected_points), scoringBasis: rescored ? 'ESPN_RULES' : 'SOURCE_TOTAL' };
+			return { ...projection, points: rescored?.points ?? Number(projection.projected_points), games: Number.isFinite(Number(metadata.games)) ? Number(metadata.games) : null, scoringBasis: rescored ? 'ESPN_RULES' : 'SOURCE_TOTAL' };
 		});
 		const espn = observedById.get(String(row.id)) ?? observedByName.get(normalizePlayerName(row.name));
+		const currentInjury: any = latestInjuries.get(row.catalogId) ?? {};
+		const injuryHistory: any = history.get(row.catalogId) ?? {};
+		const injuryBodyPart = currentInjury.injuryBodyPart ?? row.injuryBodyPart ?? null;
+		const injuryStatus = currentInjury.status ?? row.injuryStatus ?? null;
+		const sameBodyRecentWeeks = injuryBodyPart ? historyByBody.get(`${row.catalogId}:${String(injuryBodyPart).toLowerCase()}`) ?? 0 : 0;
+		const injuryAssessment = assessInjury({ injuryStatus, injuryBodyPart, estimatedReturnDate: currentInjury.estimatedReturnDate,
+			...injuryHistory, sameBodyRecentWeeks }, seasonYear);
 		const observedBye = Number(espn?.byeWeek);
 		if (Number.isInteger(observedBye) && observedBye > 0) updateBye.run(observedBye, observedAt, row.catalogId, observedBye);
 		if (espn?.projectedPoints != null && Number.isFinite(Number(espn.projectedPoints))) normalizedSources.push({ source: 'espn-draft-room', points: Number(espn.projectedPoints), scoringBasis: 'ESPN_ROOM', fetched_at: espn?.capturedAt ?? null });
@@ -110,16 +128,28 @@ export function rankedAvailablePlayers(seasonYear: number, teamCount: number, dr
 			? normalizedSources.filter((projection) => ['ESPN_ROOM', 'ESPN_RULES'].includes(projection.scoringBasis)) : normalizedSources;
 		const projectionValues = compatibleSources.map((projection) => Number(projection.points)).filter(Number.isFinite).sort((a, b) => a - b);
 		const trimmed = projectionValues.length >= 5 ? projectionValues.slice(1, -1) : projectionValues;
-		const projectedPoints = trimmed.length ? trimmed.reduce((sum, value) => sum + value, 0) / trimmed.length : null;
+		const rawProjectedPoints = trimmed.length ? trimmed.reduce((sum, value) => sum + value, 0) / trimmed.length : null;
+		const projectedGamesValues = compatibleSources.map((projection) => Number(projection.games)).filter((games) => Number.isFinite(games) && games > 0);
+		const projectedGames = projectedGamesValues.length ? projectedGamesValues.reduce((sum, games) => sum + games, 0) / projectedGamesValues.length : null;
+		const availableGames = Math.max(0, 17 - injuryAssessment.expectedGamesMissed);
+		const espnProjectionPresent = compatibleSources.some((projection) => projection.source === 'espn-draft-room');
+		const projectionNeedsAdjustment = injuryAssessment.expectedGamesMissed > 0 && rawProjectedPoints != null
+			&& ((projectedGames != null && projectedGames > availableGames) || (projectedGames == null && !espnProjectionPresent));
+		const projectedPoints = projectionNeedsAdjustment ? rawProjectedPoints * availableGames / (projectedGames ?? 17) : rawProjectedPoints;
 		const disagreement = projectionValues.length > 1 ? Math.max(...projectionValues) - Math.min(...projectionValues) : null;
 		return { id: row.id ?? `catalog:${row.catalogId}`, catalogId: row.catalogId, name: row.name, position: row.position,
 			espnVerified: observedIds.has(String(row.id)) || observedNames.has(normalizePlayerName(row.name)),
 			espnDisplayedRank: Number.isFinite(Number(espn?.displayedRank)) ? Number(espn?.displayedRank) : null,
 			nflTeam: row.nflTeam, byeWeek: Number.isInteger(observedBye) && observedBye > 0 ? observedBye : row.byeWeek, consensusRank: row.consensusRank, positionRank: row.positionRank,
 			tier: row.tier, rankUncertainty: ranking.sd ?? null, rankDelta: ranking.rankDelta ?? null, adp: row.adp,
-			projectedPoints, projectionSourceCount: projectionValues.length, projectionDisagreement: disagreement,
+			projectedPoints, rawProjectedPoints, projectedGames, injuryProjectionAdjusted: projectionNeedsAdjustment,
+			projectionSourceCount: projectionValues.length, projectionDisagreement: disagreement,
 			projectionSources: compatibleSources.map((projection) => ({ source: projection.source, points: projection.points, scoringBasis: projection.scoringBasis, fetchedAt: projection.fetched_at })),
 			minPick: adp.minPick ?? null, maxPick: adp.maxPick ?? null, draftSelectionPct: adp.draftSelectionPct ?? null,
-			totalDrafts: adp.totalDrafts ?? null, status: row.status, injuryStatus: row.injuryStatus, practiceStatus: row.practiceStatus };
+			totalDrafts: adp.totalDrafts ?? null, status: row.status, injuryStatus, injuryBodyPart, practiceStatus: row.practiceStatus,
+			estimatedReturnDate: currentInjury.estimatedReturnDate ?? null, injurySource: currentInjury.source ?? (row.injuryStatus ? 'sleeper' : null),
+			expectedGamesMissed: injuryAssessment.expectedGamesMissed, injuryRiskPenalty: injuryAssessment.totalPenalty,
+			injuryRiskReasons: injuryAssessment.reasons, careerInjuryWeeks: injuryHistory.careerInjuryWeeks ?? 0,
+			recentInjuryWeeks: injuryHistory.recentInjuryWeeks ?? 0, recentOutWeeks: injuryHistory.recentOutWeeks ?? 0, sameBodyRecentWeeks };
 	});
 }

@@ -151,6 +151,30 @@ function findPlayerRow(nameElement) {
   return nameElement.closest('[data-player-id], [data-playerid], [data-athlete-id], .player-row, tr, [role="row"], .Table2__tr') ?? nameElement;
 }
 
+function captureInjuryDetails() {
+  if (!/EST\.?\s*RETURN/i.test(document.body?.innerText ?? '')) return [];
+  const returnLabel = [...document.querySelectorAll('div, span')].find((element) =>
+    element.children.length <= 2 && /EST\.?\s*RETURN/i.test(tidy(element)));
+  if (!returnLabel) return [];
+  let card = returnLabel;
+  for (let depth = 0; card.parentElement && depth < 8; depth++, card = card.parentElement) {
+    if (card.querySelector('.playerinfo__playername, .player-column__athlete, [class*="playerName"], [class*="PlayerName"]')) break;
+  }
+  const text = tidy(card);
+  const nameElement = card.querySelector('.playerinfo__playername, .player-column__athlete, [class*="playerName"], [class*="PlayerName"], h1, h2, h3');
+  const name = tidy(nameElement);
+  const returnMatch = text.match(/EST\.?\s*RETURN\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+  const status = text.match(/\b(DAY-TO-DAY|QUESTIONABLE|DOUBTFUL|OUT|IR|PUP|SUSPENDED)\b/i)?.[1] ?? null;
+  if (!name || (!returnMatch && !status)) return [];
+  return [{
+    espnPlayerId: espnPlayerId(card),
+    name,
+    injuryStatus: status,
+    estimatedReturnDate: returnMatch?.[1] ?? null,
+    detail: text
+  }];
+}
+
 function fullDraftState() {
   const historyPicks = [];
   document.querySelectorAll('.pick-history-tables .player-details').forEach((details) => {
@@ -206,6 +230,7 @@ function fullDraftState() {
     teams,
     historyPicks,
     espnObservedAvailable: lastObservedAvailablePlayers,
+    injuryObservations: captureInjuryDetails(),
     activityPicks
   };
 }

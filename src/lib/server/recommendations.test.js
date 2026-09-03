@@ -100,3 +100,12 @@ test('penalizes a backup quarterback with the same bye as the starter', () => {
 	], { ...context, currentPick: 105, nextUserPick: 116, rosterCounts: { QB: 1 }, rosterByeCounts: { 8: 1 }, rosterPositionByeCounts: { QB: { 8: 1 } } });
 	assert.equal(result[0].name, 'Different Bye QB');
 });
+
+test('uses a granular expected-return penalty when supplied', () => {
+	const result = recommendPlayers([
+		{ name: 'Unavailable RB', position: 'RB', consensusRank: 40, adp: 40, injuryStatus: 'DAY-TO-DAY', expectedGamesMissed: 8, injuryRiskPenalty: 32, injuryRiskReasons: ['estimated return implies about 8 missed games'] },
+		{ name: 'Healthy RB', position: 'RB', consensusRank: 50, adp: 50 }
+	], { ...context, currentPick: 50, nextUserPick: 61 });
+	assert.equal(result[0].name, 'Healthy RB');
+	assert.match(result[1].reasons.join(' '), /8 missed games/);
+});
