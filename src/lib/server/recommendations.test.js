@@ -52,3 +52,20 @@ test('does not preserve a stale consensus value indefinitely', () => {
 	assert.ok(ignored);
 	assert.match(ignored.reasons.join(' '), /ranking confidence reduced/);
 });
+
+test('requires missing DST and kicker when only two roster selections remain', () => {
+	const players = [
+		{ name: 'Bench RB', position: 'RB', consensusRank: 40, adp: 45 },
+		{ name: 'Defense', position: 'DST', consensusRank: 150, adp: 150 },
+		{ name: 'Kicker', position: 'K', consensusRank: 160, adp: 160 }
+	];
+	const result = recommendPlayers(players, {
+		...context,
+		currentPick: 154,
+		rosterSizeHint: 17,
+		rosterSlots: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 8 },
+		rosterCounts: { QB: 2, RB: 6, WR: 4, TE: 2, UNKNOWN: 1 }
+	});
+	assert.deepEqual(result.map((player) => player.position).sort(), ['DST', 'K']);
+	assert.match(result[0].reasons.join(' '), /must be filled/);
+});

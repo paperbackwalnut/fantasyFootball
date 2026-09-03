@@ -2,7 +2,7 @@
 const starterTargets = { QB: 1, RB: 2, WR: 2, TE: 1, DST: 1, K: 1 };
 
 /** @typedef {{name:string,position?:string|null,consensusRank?:number|null,adp?:number|null,espnDisplayedRank?:number|null,tier?:number|null,projectedPoints?:number|null,pointVorp?:number|null,replacementPoints?:number|null,projectionSourceCount?:number|null,projectionDisagreement?:number|null,injuryStatus?:string|null,[key:string]:unknown}} Candidate */
-/** @typedef {{completed?:boolean,currentPick?:number,nextUserPick?:number|null,teamCount?:number,rosterCounts?:Record<string,number>,rosterSlots?:Record<string,number>}} DraftContext */
+/** @typedef {{completed?:boolean,currentPick?:number,nextUserPick?:number|null,teamCount?:number,rosterSizeHint?:number|null,rosterCounts?:Record<string,number>,rosterSlots?:Record<string,number>}} DraftContext */
 /** @typedef {{signals?:Array<{position:string,active:boolean,intensity:number,lastSix:number,demandMultiple:number}>}} DraftMarket */
 
 /** Build an explainable shortlist from provider-neutral player signals. */
@@ -12,17 +12,29 @@ export function recommendPlayers(players, context, market = {}) {
 	const currentPick = Number(context.currentPick) || 1;
 	const nextPick = Number(context.nextUserPick) || currentPick;
 	const round = Math.floor((currentPick - 1) / Math.max(1, context.teamCount || 10)) + 1;
-	const eligible = players.slice(0, 220).filter((player) => !positionIsFull(player.position, context.rosterCounts ?? {}));
+	const roster = context.rosterCounts ?? {};
+	const rosterSlots = context.rosterSlots ?? starterTargets;
+	const missingSpecialists = ['DST', 'K'].filter((position) => Number(rosterSlots[position] ?? 0) > Number(roster[position] ?? 0));
+	const rosterTarget = Number(context.rosterSizeHint) || Object.entries(rosterSlots)
+		.filter(([position]) => position !== 'IR')
+		.reduce((sum, [, count]) => sum + Number(count || 0), 0);
+	const selectionsMade = Object.values(roster).reduce((sum, count) => sum + Number(count || 0), 0);
+	const remainingSelections = Math.max(0, rosterTarget - selectionsMade);
+	const hasReliableRosterLimit = Boolean(Number(context.rosterSizeHint) || context.rosterSlots);
+	const mustFillSpecialists = hasReliableRosterLimit && missingSpecialists.length > 0 && remainingSelections <= missingSpecialists.length;
+	let eligible = players.slice(0, 220).filter((player) => !positionIsFull(player.position, roster));
+	if (mustFillSpecialists) eligible = eligible.filter((player) => missingSpecialists.includes(player.position ?? ''));
 	return eligible.map((player, index, pool) => {
 		const rank = Number(player.consensusRank) || index + 1;
 		const adp = Number(player.adp) || rank;
 		const roomRank = Number(player.espnDisplayedRank) || adp;
 		const position = player.position || 'UNKNOWN';
 		const rostered = Number(context.rosterCounts?.[position] || 0);
-		const target = starterTargets[position] || 0;
+		const target = Number(rosterSlots[position] ?? starterTargets[position] ?? 0);
 		/** @type {Record<string, number>} */
 		const needWeights = { QB: 5, RB: 11, WR: 10, TE: 7, DST: 5, K: 4 };
-		const needBonus = target && rostered < target ? (needWeights[position] ?? 5) + Math.max(0, target - rostered - 1) * 3 : 0;
+		const endgameNeed = mustFillSpecialists && missingSpecialists.includes(position) ? 80 : 0;
+		const needBonus = target && rostered < target ? (needWeights[position] ?? 5) + Math.max(0, target - rostered - 1) * 3 + endgameNeed : 0;
 		const consensusDelta = currentPick - rank;
 		const ignoredByRoom = Math.max(0, currentPick - Math.max(rank, adp));
 		const staleThreshold = Math.max(18, (context.teamCount || 10) * 2);
@@ -50,7 +62,8 @@ export function recommendPlayers(players, context, market = {}) {
 		const rawScore = 110 - rank * 0.34 + value + adpValue + urgency + needBonus + vorp + tierDrop + marketRunBonus + espnVerifiedBonus - stalePenalty - injuryPenalty - earlySpecialistPenalty - qbDepthPenalty;
 		const reasons = [];
 		if (value >= 5) reasons.push(`${Math.round(value / 0.55)} picks past consensus value`);
-		if (needBonus >= 11) reasons.push(`fills a starting ${position} need`);
+		if (endgameNeed) reasons.push(`required ${position} slot must be filled before the draft ends`);
+		else if (needBonus >= 11) reasons.push(`fills a starting ${position} need`);
 		if (tierDrop) reasons.push(`${position} tier drops after this option`);
 		if (marketRunBonus && run) reasons.push(`${run.lastSix} ${position}s taken in the last 6 picks`);
 		if (goneBeforeNext >= 0.72 && nextPick > currentPick) reasons.push(`${Math.round(goneBeforeNext * 100)}% estimated chance gone by pick ${nextPick}`);

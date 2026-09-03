@@ -25,7 +25,7 @@ export function normalizePlayerName(value) {
 /** @param {string} detail @param {string} name */
 export function parsePlayerDetail(detail, name) {
 	const compact = detail.replace(name, '').replace(/\s+/g, '').toUpperCase();
-	const match = compact.match(/^([A-Z]{2,3})(QB|RB|WR|TE|K|DST|D\/ST)$/);
+	const match = compact.match(/\/?([A-Z]{2,3})(QB|RB|WR|TE|K|DST|D\/ST)(?:R\d|$)/);
 	return match ? { nflTeam: match[1], position: match[2] === 'D/ST' ? 'DST' : match[2] } : { nflTeam: null, position: null };
 }
 
@@ -79,7 +79,10 @@ export function reduceDraftSnapshot(snapshot, catalog, capturedAt) {
 	const teamByName = new Map(teams.map((team) => [team.name, { id: String(team.id ?? ''), name: team.name, picks: [] }]));
 	const draftedEspnIds = new Set();
 	let resolvedCount = 0;
-	const picks = (Array.isArray(snapshot.historyPicks) ? snapshot.historyPicks : []).map((pick, offset) => {
+	const historyPicks = Array.isArray(snapshot.historyPicks) ? snapshot.historyPicks : [];
+	const activityPicks = Array.isArray(snapshot.activityPicks) ? snapshot.activityPicks : [];
+	const snapshotPicks = activityPicks.length > historyPicks.length ? activityPicks : historyPicks;
+	const picks = snapshotPicks.map((pick, offset) => {
 		const resolution = resolvePlayer(pick, index);
 		const espnPlayerId = resolution.player?.espn_id ? String(resolution.player.espn_id) : pick.espnPlayerId || null;
 		if (espnPlayerId) draftedEspnIds.add(espnPlayerId);
@@ -112,6 +115,7 @@ export function reduceDraftSnapshot(snapshot, catalog, capturedAt) {
 		draftKind: ['MOCK', 'LEAGUE'].includes(snapshot.draftKind) ? snapshot.draftKind : 'UNKNOWN',
 		roomLabel: snapshot.roomLabel ?? null,
 		draftSlotHint: Number(snapshot.draftSlotHint) || null,
+		rosterSizeHint: Number(snapshot.rosterSizeHint) || null,
 		preDraft: Boolean(snapshot.preDraft),
 		currentPick,
 		completed: Boolean(snapshot.completed),

@@ -7,10 +7,10 @@ import { recommendPlayers } from '$lib/server/recommendations.js';
 import { applyLeagueValuation } from '$lib/server/valuation.js';
 import { runShortHorizonRollouts } from '$lib/server/draft-rollout.js';
 
-const MODEL_VERSION = 'draft-advisor-2.0.1';
+const MODEL_VERSION = 'draft-advisor-2.0.2';
 
 export function draftStateHash(draft: any) {
-	return hash(JSON.stringify({ url: draft?.draftUrl, currentPick: draft?.currentPick, completed: draft?.completed, onClock: draft?.userIsOnTheClock,
+	return hash(JSON.stringify({ url: draft?.draftUrl, currentPick: draft?.currentPick, completed: draft?.completed, onClock: draft?.userIsOnTheClock, rosterSizeHint: draft?.rosterSizeHint,
 		picks: (draft?.picks ?? []).map((pick: any) => [pick.pickNumber, pick.teamId, pick.catalogId ?? pick.playerName]),
 		visible: (draft?.espnObservedAvailable ?? []).map((player: any) => [player.espnPlayerId ?? player.name, player.displayedRank, player.projectedPoints]) }));
 }

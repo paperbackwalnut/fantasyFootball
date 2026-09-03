@@ -24,6 +24,7 @@ export function deriveLeagueContext(state, importedLeague) {
 	return {
 		leagueId, seasonYear, userTeamId: userTeamId ?? null, userTeamName: userTeam?.name ?? null,
 		teamCount: teams.length || importedLeague?.team_count || 0, draftType: importedLeague?.draft_type ?? 'SNAKE', draftSlot,
+		rosterSizeHint: Number(state?.rosterSizeHint) || null,
 		currentPick, completed, nextUserPick, picksUntilNextTurn: nextUserPick ? Math.max(0, nextUserPick - currentPick) : null,
 		scoring: scoringLabel(espnSettings?.scoringSettings), rosterSlots: normalizeRosterSlots(espnSettings?.rosterSettings?.lineupSlotCounts),
 		settingsSource: espnSettings ? 'league-import' : 'safe-defaults', rosterCounts,

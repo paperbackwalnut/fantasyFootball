@@ -52,6 +52,21 @@ test('reduces a full snapshot into picks, rosters, and availability', () => {
 	assert.deepEqual(state.availablePlayers.map((player) => player.id), ['1']);
 });
 
+test('uses the longer live activity feed when Pick History is one selection behind', () => {
+	const state = reduceDraftSnapshot({
+		currentPick: 3,
+		teams: [{ id: '10', name: 'Alpha' }, { id: '20', name: 'Beta' }],
+		historyPicks: [{ pick: '1', name: 'Jahmyr Gibbs', team: 'Alpha', detail: 'Jahmyr GibbsDETRB' }],
+		activityPicks: [
+			{ name: 'Jahmyr Gibbs', team: 'Alpha', detail: 'Jahmyr Gibbs / DET RBR1, P1 - Alpha' },
+			{ name: 'James Cook III', team: 'Beta', detail: 'James Cook III / BUF RBR1, P2 - Beta' }
+		]
+	}, catalog, '2026-09-03T12:00:00.000Z');
+	assert.equal(state.picks.length, 2);
+	assert.equal(state.picks[1].playerName, 'James Cook III');
+	assert.equal(state.picks[1].position, 'RB');
+});
+
 test('reduces an empty pre-draft snapshot into usable initial state', () => {
 	const state = reduceDraftSnapshot({ source: 'espn-pick-history', preDraft: true, draftKind: 'MOCK', roomLabel: 'Practice Draft for JCE League', currentPick: 1, draftSlotHint: 7, teams: [{ id: '8', name: 'Mine' }], historyPicks: [] }, catalog, '2026-08-19T12:00:00.000Z');
 	assert.equal(state.picks.length, 0);
