@@ -3,6 +3,7 @@ import { getDatabase } from '$lib/server/db/database';
 import { reconcileDraftState, reduceDraftSnapshot } from './draft-state.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { buildDraftAdvice } from '$lib/server/recommendation-engine';
+import { getNFLTeamName, getPositionName } from '$lib/server/draft/utils';
 
 export type SyncObservation = { schemaVersion: number; id: string; capturedAt: string; type: string; data: unknown };
 type SyncStatus = { observationCount: number; lastObservationAt: string | null; lastBatchAt: string | null; typeCounts: Record<string, number> };
@@ -17,7 +18,10 @@ export async function appendObservations(observations: SyncObservation[]) {
 	const clearState = db.prepare("DELETE FROM live_draft_state WHERE platform='ESPN'");
 	let latestState: any = null;
 	db.transaction(() => {
-		for (const observation of observations) insert.run(observation.id, observation.schemaVersion, observation.capturedAt, observation.type, JSON.stringify(observation.data ?? null), receivedAt);
+		for (const observation of observations) {
+			insert.run(observation.id, observation.schemaVersion, observation.capturedAt, observation.type, JSON.stringify(observation.data ?? null), receivedAt);
+			if (observation.type === 'espn_player_pool') recordEspnPlayerPool(observation.data, observation.capturedAt);
+		}
 		const authoritative = [...observations].reverse().find(isAuthoritativeSnapshot);
 		if (authoritative) {
 			const incoming = authoritative.data as Record<string, any>;
@@ -44,6 +48,54 @@ export async function appendObservations(observations: SyncObservation[]) {
 				ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at`).run(JSON.stringify({ message }), new Date().toISOString());
 		}
 	}
+}
+
+function recordEspnPlayerPool(data: unknown, capturedAt: string) {
+	if (!data || typeof data !== 'object') return;
+	const payload = data as any;
+	if (!Array.isArray(payload.players) || !Number.isInteger(Number(payload.seasonYear))) return;
+	const seasonYear = Number(payload.seasonYear);
+	const db = getDatabase();
+	const byEspn = db.prepare('SELECT id FROM players WHERE espn_id=?');
+	const byName = db.prepare('SELECT id FROM players WHERE normalized_name=? ORDER BY active DESC LIMIT 2');
+	const insertPlayer = db.prepare(`INSERT INTO players(id,full_name,normalized_name,position,nfl_team,active,espn_id,data_json,updated_at)
+		VALUES(?,?,?,?,?,?,?,?,?)`);
+	const updatePlayer = db.prepare(`UPDATE players SET full_name=?,normalized_name=?,position=?,nfl_team=?,active=?,espn_id=?,data_json=?,updated_at=? WHERE id=?`);
+	const upsertStatus = db.prepare(`INSERT INTO player_status(player_id,source,status,injury_status,news_updated_at,data_json,fetched_at)
+		VALUES(?,?,?,?,?,?,?) ON CONFLICT(player_id) DO UPDATE SET source=excluded.source,status=excluded.status,
+		injury_status=excluded.injury_status,news_updated_at=excluded.news_updated_at,data_json=excluded.data_json,fetched_at=excluded.fetched_at`);
+	const upsertValue = db.prepare(`INSERT INTO player_values(player_id,season_year,scoring_format,source,overall_rank,adp,projected_points,value_json,fetched_at)
+		VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(player_id,season_year,scoring_format,source) DO UPDATE SET overall_rank=excluded.overall_rank,
+		adp=excluded.adp,projected_points=excluded.projected_points,value_json=excluded.value_json,fetched_at=excluded.fetched_at`);
+	const upsertInjury = db.prepare(`INSERT INTO injury_events(id,player_id,source,source_event_key,season_year,observed_at,source_updated_at,status,confidence,data_json)
+		VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source,source_event_key) DO UPDATE SET data_json=excluded.data_json`);
+	let imported = 0;
+	for (const item of payload.players) {
+		if (!item?.espnPlayerId || !item?.name) continue;
+		const normalized = normalizeName(item.name);
+		let row = byEspn.get(String(item.espnPlayerId)) as { id: string } | undefined;
+		if (!row) {
+			const matches = byName.all(normalized) as { id: string }[];
+			if (matches.length === 1) row = matches[0];
+		}
+		const id = row?.id ?? randomUUID();
+		const position = getPositionName(Number(item.positionId));
+		const nflTeam = getNFLTeamName(Number(item.proTeamId));
+		const raw = JSON.stringify(item);
+		if (row) updatePlayer.run(item.name, normalized, position, nflTeam, Number(item.active !== false), String(item.espnPlayerId), raw, capturedAt, id);
+		else insertPlayer.run(id, item.name, normalized, position, nflTeam, Number(item.active !== false), String(item.espnPlayerId), raw, capturedAt);
+		upsertStatus.run(id, 'espn-player-pool', item.active === false ? 'Inactive' : 'Active', item.injuryStatus ?? null, item.lastNewsAt ?? null, raw, capturedAt);
+		if (item.rank != null || item.adp != null || item.projectedPoints != null) {
+			upsertValue.run(id, seasonYear, 'PPR', 'espn-draft-pool', item.rank ?? null, item.adp ?? null, item.projectedPoints ?? null, raw, capturedAt);
+		}
+		const status = String(item.injuryStatus ?? (item.injured ? 'INJURED' : 'ACTIVE'));
+		const eventKey = createHash('sha256').update(`${id}:${seasonYear}:${status}:${item.lastNewsAt ?? ''}`).digest('hex');
+		upsertInjury.run(randomUUID(), id, 'espn-player-pool', eventKey, seasonYear, capturedAt, item.lastNewsAt ?? null, status, item.injured ? 0.85 : 0.75, raw);
+		imported++;
+	}
+	db.prepare(`INSERT INTO provider_cache(key,value_json,expires_at,updated_at) VALUES('player-source:espn-draft-pool',?,?,?)
+		ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,expires_at=excluded.expires_at,updated_at=excluded.updated_at`)
+		.run(JSON.stringify({ leagueId: payload.leagueId ?? null, seasonYear, players: payload.players.length, imported }), new Date(Date.now() + 15 * 60 * 1000).toISOString(), capturedAt);
 }
 
 function recordEspnInjuries(observations: unknown, capturedAt: string) {

@@ -65,3 +65,30 @@ export function parseJsonPayload(payload) {
   if (typeof payload !== "string") return [];
   try { return findDraftSnapshots(JSON.parse(payload)); } catch { return []; }
 }
+
+export function compactEspnPlayerPool(payload, seasonYear) {
+  const root = typeof payload === "string" ? JSON.parse(payload) : payload;
+  if (!root || !Array.isArray(root.players)) return [];
+  return root.players.map((entry) => {
+    const player = entry?.player;
+    if (!player?.id || !player.fullName) return null;
+    const ppr = player.draftRanksByRankType?.PPR ?? null;
+    const projection = player.stats?.find((stat) =>
+      Number(stat?.externalId) === Number(seasonYear) && Number(stat?.statSourceId) === 1
+    );
+    const finiteOrNull = (value) => value == null || value === '' || !Number.isFinite(Number(value)) ? null : Number(value);
+    return {
+      espnPlayerId: String(player.id),
+      name: player.fullName,
+      positionId: finiteOrNull(player.defaultPositionId),
+      proTeamId: finiteOrNull(player.proTeamId),
+      active: player.active !== false,
+      injured: player.injured === true,
+      injuryStatus: player.injuryStatus ?? null,
+      lastNewsAt: Number.isFinite(Number(player.lastNewsDate)) ? new Date(Number(player.lastNewsDate)).toISOString() : null,
+      rank: finiteOrNull(ppr?.rank),
+      adp: finiteOrNull(player.ownership?.averageDraftPosition),
+      projectedPoints: finiteOrNull(projection?.appliedTotal)
+    };
+  }).filter(Boolean);
+}

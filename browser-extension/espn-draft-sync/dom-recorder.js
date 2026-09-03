@@ -94,6 +94,18 @@ function sendContentHeartbeat() {
 sendContentHeartbeat();
 setInterval(sendContentHeartbeat, 3000);
 
+function requestPlayerPool() {
+  const url = new URL(location.href);
+  const leagueId = url.searchParams.get('leagueId');
+  const seasonYear = Number(url.searchParams.get('seasonId'));
+  if (leagueId && Number.isInteger(seasonYear)) {
+    void safeRuntimeMessage({ type: 'FETCH_PLAYER_POOL', leagueId, seasonYear });
+  }
+}
+
+requestPlayerPool();
+setInterval(requestPlayerPool, 60000);
+
 const tidy = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
 
 function espnPlayerId(el) {

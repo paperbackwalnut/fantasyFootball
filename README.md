@@ -24,6 +24,7 @@ Local-first fantasy football tooling focused first on reliable ESPN live-draft s
 - Manual daily refresh of current player positions, teams, injury/practice status, depth-chart order, and add/drop trends through Sleeper's official read-only API
 - Locally cached 2009–2024 nflverse injury-report history with recent recurrence and missed-game risk
 - ESPN player-card estimated-return capture with a granular, source-attributed recommendation penalty
+- Automatic authenticated ESPN draft-pool import before pick 1, covering ESPN IDs, positions, NFL teams, injury status, news timestamps, PPR rank/ADP, and projections for the full room pool
 - Daily 2026 PPR redraft expert-consensus rankings, uncertainty, movement, and derived positional tiers from DynastyProcess's latest-only open dataset
 - Recent league-size-specific PPR redraft ADP with earliest/latest pick ranges and draft sample sizes from MyFantasyLeague's official API
 - Versioned projection-set imports with source provenance, optional floors/ceilings, games, and stat-category fields
@@ -97,7 +98,7 @@ The development server listens at `http://127.0.0.1:5173` so the Chrome extensio
 2. Enable **Developer mode**.
 3. Choose **Load unpacked**.
 4. Select `browser-extension/espn-draft-sync` from this repository.
-   The popup must show **Build 0.4.9 · recommendation audit**. An older build means Chrome is pointed at the retired standalone checkout.
+   The popup must show **Build 0.5.0 · recommendation audit**. An older build means Chrome is pointed at the retired standalone checkout.
 5. Open the extension popup, set the receiver to `http://127.0.0.1:5173/api/sync/espn/events`, enter the same pairing token, and save.
 
 Normal draft synchronization starts automatically on ESPN draft and mock-draft pages. Network diagnostics are optional and may display Chrome's debugger notification; they are not needed for ordinary draft capture.

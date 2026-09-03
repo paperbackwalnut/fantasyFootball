@@ -85,9 +85,9 @@ export function rankedAvailablePlayers(seasonYear: number, teamCount: number, dr
 		if (!values.some((value) => value.source === projection.source)) values.push(projection);
 		projectionsByPlayer.set(projection.player_id, values);
 	}
-	const latestInjuries = new Map((db.prepare(`SELECT event.player_id,event.status,event.body_part injuryBodyPart,event.estimated_return_date estimatedReturnDate,event.source,event.observed_at
-		FROM injury_events event JOIN (SELECT player_id,MAX(observed_at) observed_at FROM injury_events WHERE season_year=? GROUP BY player_id) latest
-		ON latest.player_id=event.player_id AND latest.observed_at=event.observed_at WHERE event.season_year=?`).all(seasonYear, seasonYear) as any[]).map((row) => [row.player_id, row]));
+	const latestInjuries = new Map((db.prepare(`SELECT player_id,status,body_part injuryBodyPart,estimated_return_date estimatedReturnDate,source,observed_at FROM (
+		SELECT event.*,ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY (estimated_return_date IS NOT NULL) DESC,observed_at DESC) injury_priority
+		FROM injury_events event WHERE season_year=?) WHERE injury_priority=1`).all(seasonYear) as any[]).map((row) => [row.player_id, row]));
 	const history = new Map((db.prepare(`SELECT player_id,COUNT(DISTINCT season_year||':'||COALESCE(week,'')) careerInjuryWeeks,
 		SUM(CASE WHEN season_year>=? THEN 1 ELSE 0 END) recentInjuryWeeks,
 		SUM(CASE WHEN season_year>=? AND games_missed>0 THEN games_missed ELSE 0 END) recentOutWeeks
@@ -132,7 +132,7 @@ export function rankedAvailablePlayers(seasonYear: number, teamCount: number, dr
 		const projectedGamesValues = compatibleSources.map((projection) => Number(projection.games)).filter((games) => Number.isFinite(games) && games > 0);
 		const projectedGames = projectedGamesValues.length ? projectedGamesValues.reduce((sum, games) => sum + games, 0) / projectedGamesValues.length : null;
 		const availableGames = Math.max(0, 17 - injuryAssessment.expectedGamesMissed);
-		const espnProjectionPresent = compatibleSources.some((projection) => projection.source === 'espn-draft-room');
+		const espnProjectionPresent = compatibleSources.some((projection) => String(projection.source).startsWith('espn-draft-'));
 		const projectionNeedsAdjustment = injuryAssessment.expectedGamesMissed > 0 && rawProjectedPoints != null
 			&& ((projectedGames != null && projectedGames > availableGames) || (projectedGames == null && !espnProjectionPresent));
 		const projectedPoints = projectionNeedsAdjustment ? rawProjectedPoints * availableGames / (projectedGames ?? 17) : rawProjectedPoints;

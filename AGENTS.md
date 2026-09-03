@@ -19,7 +19,7 @@ Do not reintroduce Supabase. Runtime state belongs in local SQLite with backup/r
 - ESPN state reducer and recommendation engine: `src/lib/server/espn-sync/` and recommendation modules under `src/lib/server/`
 - Bundled unpacked Chrome extension: `browser-extension/espn-draft-sync/`
 - Local runtime data: `.data/` (ignored by Git)
-- Current extension build: **0.4.9**
+- Current extension build: **0.5.0**
 - Expected receiver: `http://127.0.0.1:5173/api/sync/espn/events`
 
 The retired standalone extension checkout at `C:\Users\chris\ffDraftSync` is obsolete. Do not edit or load it. The canonical extension is inside this repository.
@@ -28,7 +28,7 @@ The retired standalone extension checkout at `C:\Users\chris\ffDraftSync` is obs
 
 Recent commits added reproducible league-aware recommendations, automated projection/data imports, missing-projection guards, inferred on-clock state, ESPN drafting confirmation, pre-draft snapshots, listener/command diagnostics, and safe Chrome context shutdown handling.
 
-The immediate validation target is extension build 0.4.9:
+The immediate validation target is extension build 0.5.0:
 
 1. Start the app on port 5173.
 2. Load `browser-extension/espn-draft-sync` unpacked in Chrome.
@@ -36,6 +36,7 @@ The immediate validation target is extension build 0.4.9:
 4. Enter an ESPN mock lobby and then a draft.
 5. Verify the popup reports `pageListener: online`, a recent `commandPollAt`, and `commandPollError: null`.
 6. Verify `/draft` initializes before pick 1, advances on every pick, recognizes the user's turns, and copies recommendation names for ESPN search.
+7. Verify `playerPoolSync` reports roughly 1,000 players with no error before pick 1.
 
 When an extension error is reported, first confirm the popup build number and whether Chrome has more than one copy installed. Reloading an unpacked extension invalidates old content scripts; clear errors only after the new build is loaded and the ESPN page is refreshed.
 

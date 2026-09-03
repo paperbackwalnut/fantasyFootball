@@ -1,4 +1,4 @@
-import { parseEspnText, parseJsonPayload } from "./parsers.js";
+import { compactEspnPlayerPool, parseEspnText, parseJsonPayload } from "./parsers.js";
 
 const DEFAULT_SETTINGS = {
   endpoint: "http://127.0.0.1:5196/api/sync/espn/events",
@@ -40,6 +40,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       await chrome.storage.local.set({ lastContentHeartbeatAt });
       return { ok: true };
     },
+    FETCH_PLAYER_POOL: () => fetchPlayerPool(message.leagueId, message.seasonYear),
     SAVE_SETTINGS: () => saveSettings(message.settings),
     DOM_SNAPSHOT: async () => {
       const snapshot = message.snapshot ?? {};
@@ -319,7 +320,7 @@ async function setDelivery(ok, error) {
 
 async function getStatus() {
   await stateReady;
-  const stored = await chrome.storage.local.get(["settings", "observationCount", "delivery", "lastObservationAt", "detachReason", "lastContentHeartbeatAt", "lastCommandPollAt", "lastCommandPollError"]);
+  const stored = await chrome.storage.local.get(["settings", "observationCount", "delivery", "lastObservationAt", "detachReason", "lastContentHeartbeatAt", "lastCommandPollAt", "lastCommandPollError", "playerPoolSync"]);
   return {
     ok: true, attachedTabId,
     settings: { ...DEFAULT_SETTINGS, ...(stored.settings ?? {}) },
@@ -329,8 +330,38 @@ async function getStatus() {
     detachReason: stored.detachReason ?? null,
     lastContentHeartbeatAt: stored.lastContentHeartbeatAt ?? lastContentHeartbeatAt,
     lastCommandPollAt: stored.lastCommandPollAt ?? lastCommandPollAt,
-    lastCommandPollError: stored.lastCommandPollError ?? lastCommandPollError
+    lastCommandPollError: stored.lastCommandPollError ?? lastCommandPollError,
+    playerPoolSync: stored.playerPoolSync ?? null
   };
+}
+
+async function fetchPlayerPool(leagueId, seasonYear) {
+  const league = String(leagueId ?? '').replace(/\D/g, '');
+  const season = Number(seasonYear);
+  if (!league || !Number.isInteger(season)) return { ok: false, error: 'Missing ESPN league or season' };
+  const key = `${league}:${season}`;
+  const stored = await chrome.storage.local.get('playerPoolSync');
+  const previous = stored.playerPoolSync;
+  if (previous?.key === key && previous?.ok && Date.now() - Date.parse(previous.at) < 10 * 60 * 1000) return previous;
+  const filter = JSON.stringify({ players: { filterStatsForContainerIds: { value: [`00${season - 1}`, `10${season}`] } } });
+  const url = new URL(`https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${season}/segments/0/leagues/${league}`);
+  url.searchParams.set('filter', filter);
+  url.searchParams.append('view', 'draftInit');
+  url.searchParams.append('view', 'mSettings');
+  try {
+    const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
+    if (!response.ok) throw new Error(`ESPN player pool returned ${response.status}`);
+    const players = compactEspnPlayerPool(await response.json(), season);
+    if (players.length < 100) throw new Error(`ESPN player pool contained only ${players.length} players`);
+    await record('espn_player_pool', { leagueId: league, seasonYear: season, players });
+    const result = { ok: true, key, at: new Date().toISOString(), playerCount: players.length, error: null };
+    await chrome.storage.local.set({ playerPoolSync: result });
+    return result;
+  } catch (error) {
+    const result = { ok: false, key, at: new Date().toISOString(), playerCount: 0, error: String(error) };
+    await chrome.storage.local.set({ playerPoolSync: result });
+    return result;
+  }
 }
 
 async function saveSettings(settings) {

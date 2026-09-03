@@ -2,9 +2,9 @@
 
 This is the active unpacked Chrome extension for the local Fantasy Football Draft Assistant.
 
-It reads ESPN's complete Pick History from the draft-room DOM, reconciles the full draft after every change, and forwards snapshots to the local SvelteKit receiver. Normal synchronization does not require Chrome debugger attachment. Optional network diagnostics exist only for troubleshooting.
+It reads ESPN's complete Pick History from the draft-room DOM, reconciles the full draft after every change, and forwards snapshots to the local SvelteKit receiver. It also imports ESPN's authenticated full player pool before pick 1 so current injuries, projections, rank, ADP, positions, and teams are available without opening player cards. Normal synchronization does not require Chrome debugger attachment. Optional network diagnostics exist only for troubleshooting.
 
-When the local dashboard shows that you are on the clock, its recommendation cards can also request a draft click. The content script verifies the exact visible player name and ESPN's enabled Draft button before clicking; it fails closed if either is missing or ambiguous.
+Recommendation cards copy a player name to the clipboard for quick paste into ESPN search. Player-card details such as an estimated return date are captured as an additional injury overlay when available.
 
 ## Load unpacked
 
@@ -16,7 +16,7 @@ When the local dashboard shows that you are on the clock, its recommendation car
 6. Enter the same `ESPN_SYNC_TOKEN` configured in the app's `.env` and save.
 7. Open an ESPN mock draft or live draft. No Attach button is required.
 
-The popup must show **Build 0.4.9 · recommendation audit**. If it shows an older version, click Reload on the unpacked extension (or remove and load this directory again); do not load the retired standalone `ffDraftSync` checkout.
+The popup must show **Build 0.5.0 · recommendation audit**. If it shows an older version, click Reload on the unpacked extension (or remove and load this directory again); do not load the retired standalone `ffDraftSync` checkout.
 
 The popup reports the queued observation count and latest delivery result. **Send queued now** retries retained observations. **Export capture** creates a diagnostic JSON file without requiring the local receiver.
 
