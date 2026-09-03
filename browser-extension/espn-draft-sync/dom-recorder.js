@@ -118,7 +118,7 @@ function captureVisibleAvailablePlayers() {
   for (const nameElement of document.querySelectorAll('.playerinfo__playername, .player-column__athlete')) {
     if (nameElement.closest('.pick-history-tables, .pick-message__container, .draft-column .roster')) continue;
     const row = findPlayerRow(nameElement);
-    if (/\bundo\b/i.test(tidy(row)) || row.querySelector('.player-details')) continue;
+    if (/\bundo\b/i.test(tidy(row))) continue;
     const cells = [...row.querySelectorAll('td, [role="cell"], .Table2__td')].map((cell) => tidy(cell));
     const table = row.closest('table, [role="table"], .Table2');
     const headers = [...(table?.querySelectorAll('th, [role="columnheader"], .Table2__th') ?? [])].map((cell) => tidy(cell).toUpperCase());
@@ -286,7 +286,8 @@ async function executeDraftCommand(command) {
   let names = visibleDraftPlayerNames();
   let matches = matchCommandPlayers(names, command, normalize);
 	if (!matches.length) {
-		const search = [...document.querySelectorAll('input')].find((input) => /search/i.test(input.placeholder ?? '') || /search/i.test(input.getAttribute('aria-label') ?? ''));
+		const search = [...document.querySelectorAll('input')].find((input) =>
+			/(?:search|player\s*name)/i.test(`${input.placeholder ?? ''} ${input.getAttribute('aria-label') ?? ''}`));
 		if (search) {
 			const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
 			setter?.call(search, command.playerName);
@@ -323,7 +324,7 @@ async function executeDraftCommand(command) {
 function visibleDraftPlayerNames() {
   return [...document.querySelectorAll('.playerinfo__playername, .player-column__athlete')].filter((element) => {
     const row = findPlayerRow(element);
-    return !element.closest('.pick-history-tables, .pick-message__container, .draft-column .roster') && !/\bundo\b/i.test(tidy(row)) && !row.querySelector('.player-details');
+    return !element.closest('.pick-history-tables, .pick-message__container, .draft-column .roster') && !/\bundo\b/i.test(tidy(row));
   });
 }
 

@@ -95,7 +95,7 @@ The development server listens at `http://127.0.0.1:5173` so the Chrome extensio
 2. Enable **Developer mode**.
 3. Choose **Load unpacked**.
 4. Select `browser-extension/espn-draft-sync` from this repository.
-   The popup must show **Build 0.4.5 · recommendation audit**. An older build means Chrome is pointed at the retired standalone checkout.
+   The popup must show **Build 0.4.6 · recommendation audit**. An older build means Chrome is pointed at the retired standalone checkout.
 5. Open the extension popup, set the receiver to `http://127.0.0.1:5173/api/sync/espn/events`, enter the same pairing token, and save.
 
 Normal draft synchronization starts automatically on ESPN draft and mock-draft pages. Network diagnostics are optional and may display Chrome's debugger notification; they are not needed for ordinary draft capture.

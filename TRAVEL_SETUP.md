@@ -71,7 +71,7 @@ Open `http://127.0.0.1:5173/draft`.
 2. Enable **Developer mode**.
 3. Select **Load unpacked**.
 4. Choose `fantasyFootball\browser-extension\espn-draft-sync`.
-5. Confirm the popup says **Build 0.4.5**.
+5. Confirm the popup says **Build 0.4.6**.
 6. Set the receiver to `http://127.0.0.1:5173/api/sync/espn/events`.
 7. Paste the same laptop pairing token and save.
 
@@ -89,7 +89,7 @@ If you restore the database without the original key, draft and player data stil
 
 Open the cloned repository as the workspace and begin with:
 
-> Read AGENTS.md, README.md, and TRAVEL_SETUP.md completely. Inspect the current git status and recent commits. Continue the ESPN extension 0.4.5 validation described in AGENTS.md. Do not use the retired ffDraftSync repository or reintroduce Supabase.
+> Read AGENTS.md, README.md, and TRAVEL_SETUP.md completely. Inspect the current git status and recent commits. Continue the ESPN extension 0.4.6 validation described in AGENTS.md. Do not use the retired ffDraftSync repository or reintroduce Supabase.
 
 Codex should then inspect the repository rather than relying only on the prompt. Commit and push completed laptop work so it is available again on the desktop.
 
