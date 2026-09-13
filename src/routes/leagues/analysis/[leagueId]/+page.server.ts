@@ -16,12 +16,14 @@ export const load = (async ({ params }) => {
 	const scoringPeriod = Number(league.settings?.scoring_period_id ?? league.settings?.espn_status?.currentMatchupPeriod) || 1;
 	const db = getDatabase();
 	const kickoffSchedule: any = kickoffScheduleStatus();
+	const scheduleMatchesWeek = Number(kickoffSchedule?.week) === scoringPeriod && Number(kickoffSchedule?.season) === Number(league.season_year);
 	const gameByTeam = new Map<string, any>();
 	for (const game of kickoffSchedule?.games ?? []) for (const team of game.teams ?? []) gameByTeam.set(String(team), game);
 	const gameContext = (team: string | null | undefined) => {
 		const game = team ? gameByTeam.get(String(team)) : null;
-		return { kickoffAt: game?.kickoffAt ?? null, gameStatus: game?.status ?? null,
-			lineupLocked: game ? game.status !== 'pre' || new Date(game.kickoffAt).getTime() <= Date.now() : false };
+		return { kickoffAt: scheduleMatchesWeek ? game?.kickoffAt ?? null : null, gameStatus: scheduleMatchesWeek ? game?.status ?? null : null,
+			gameKnown: scheduleMatchesWeek && Boolean(game),
+			lineupLocked: scheduleMatchesWeek && game ? game.status !== 'pre' || new Date(game.kickoffAt).getTime() <= Date.now() : false };
 	};
 	const value = db.prepare(`SELECT p.id,p.espn_id,p.full_name,p.position,p.nfl_team,p.bye_week,
 		v.overall_rank,v.position_rank,s.injury_status FROM players p
@@ -152,17 +154,32 @@ export const load = (async ({ params }) => {
 		sit: (user?.currentStarters ?? []).filter((player: any) => !recommendedIds.has(player.espnId)),
 		edge: null as number | null,
 		confidence: 'No change' as string,
-		closeCall: null
+		closeCall: null,
+		warnings: [] as string[]
 	};
-	if (startSit.start.length && startSit.sit.length) {
-		const edge = finite(startSit.start[0].weeklyProjected) != null && finite(startSit.sit[0].weeklyProjected) != null
-			? round(Number(startSit.start[0].weeklyProjected) - Number(startSit.sit[0].weeklyProjected)) : null;
+	if (!user?.players?.length || !user.currentStarters.length) {
+		startSit.confidence = 'Unavailable';
+		startSit.warnings.push('No submitted lineup is available from the latest league import. Refresh the league before using start/sit advice.');
+		startSit.start = []; startSit.sit = [];
+	} else if (startSit.start.length || startSit.sit.length) {
+		const moves = [...startSit.start, ...startSit.sit];
+		const allProjected = moves.every((player: any) => finite(player.weeklyProjected) != null);
+		const edge = allProjected
+			? round(startSit.start.reduce((sum: number, player: any) => sum + Number(player.weeklyProjected), 0)
+				- startSit.sit.reduce((sum: number, player: any) => sum + Number(player.weeklyProjected), 0)) : null;
 		startSit.edge = edge;
-		const weeklyConflict = finite(startSit.start[0].weeklyRank) != null && finite(startSit.sit[0].weeklyRank) != null
-			&& Number(startSit.start[0].weeklyRank) > Number(startSit.sit[0].weeklyRank);
-		const locked = Boolean(startSit.start[0].lineupLocked || startSit.sit[0].lineupLocked);
-		if (locked || edge == null || edge < 1.5 || (weeklyConflict && edge < 3)) {
-			startSit.closeCall = { start: startSit.start[0], sit: startSit.sit[0], edge, weeklyConflict, locked };
+		const weeklyConflict = startSit.start.some((player: any) => finite(player.weeklyRank) != null
+			&& startSit.sit.some((sitting: any) => sitting.position === player.position && finite(sitting.weeklyRank) != null
+				&& Number(player.weeklyRank) > Number(sitting.weeklyRank)));
+		const locked = moves.some((player: any) => player.lineupLocked);
+		const unknownKickoff = moves.some((player: any) => !player.gameKnown);
+		const riskyStarter = startSit.start.some((player: any) => isUnavailable(player.injuryStatus));
+		if (locked) startSit.warnings.push('A proposed move involves a player whose game has started.');
+		if (unknownKickoff) startSit.warnings.push('A proposed player has no verified game time, so the move may be locked.');
+		if (riskyStarter) startSit.warnings.push('A proposed starter is listed out, doubtful, suspended, or on reserve.');
+		if (edge == null) startSit.warnings.push('A proposed player has no weekly projection.');
+		if (locked || unknownKickoff || riskyStarter || edge == null || edge < 1.5 || (weeklyConflict && edge < 3)) {
+			startSit.closeCall = { start: startSit.start[0] ?? null, sit: startSit.sit[0] ?? null, edge, weeklyConflict, locked };
 			startSit.start = [];
 			startSit.sit = [];
 			startSit.confidence = 'Hold';
@@ -183,7 +200,7 @@ export const load = (async ({ params }) => {
 
 function chooseStarters(players: any[], rosterPositions?: string[] | null) {
 	const lockedStarters = players.filter((player) => player.lineupLocked && ![20, 21].includes(Number(player.lineupSlotId)));
-	const remaining = players.filter((player) => !player.lineupLocked).sort(byWeeklyThenRank);
+	const remaining = players.filter((player) => !player.lineupLocked && Number(player.lineupSlotId) !== 21 && !isUnavailable(player.injuryStatus)).sort(byWeeklyThenRank);
 	const starters: any[] = [];
 	const slots = Array.isArray(rosterPositions) && rosterPositions.length
 		? rosterPositions.filter((slot) => !['BN', 'IR', 'TAXI'].includes(slot))
@@ -200,6 +217,7 @@ function chooseStarters(players: any[], rosterPositions?: string[] | null) {
 	}
 	return { starters: starters.sort((a, b) => String(a.position).localeCompare(String(b.position)) || byRank(a, b)), bench: remaining.concat(players.filter((player) => player.lineupLocked && [20, 21].includes(Number(player.lineupSlotId)))) };
 }
+function isUnavailable(status: unknown) { return ['OUT', 'O', 'IR', 'PUP', 'SUSPENDED', 'DOUBTFUL', 'BYE'].includes(String(status ?? '').toUpperCase()); }
 function isFlexible(slot: string) { return ['FLEX', 'SUPER_FLEX', 'REC_FLEX', 'WRRB_FLEX'].includes(slot); }
 function slotEligibility(slot: string) {
 	if (slot === 'FLEX') return ['RB', 'WR', 'TE'];
