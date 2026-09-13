@@ -172,7 +172,7 @@ export const load = (async ({ params }) => {
 		projected: (user?.players ?? []).filter((player: any) => player.weeklyProjected != null).length,
 		total: (user?.players ?? []).length
 	};
-	return { league: { id: league.id, name: league.name, platform: league.platform, seasonYear: league.season_year, teamCount: league.team_count },
+	return { league: { id: league.id, externalId: league.external_id, name: league.name, platform: league.platform, seasonYear: league.season_year, teamCount: league.team_count },
 		powerRankings: powerRankings.map(({ rawScore: _raw, ...team }) => team), user, positionComparison, waiverAdvice, tradeTargets, startSit, scoringPeriod, projectionCoverage, kickoffSchedule,
 		methodology: projectionCoverage.projected > 0
 			? league.platform === 'SLEEPER'
@@ -182,18 +182,23 @@ export const load = (async ({ params }) => {
 }) satisfies PageServerLoad;
 
 function chooseStarters(players: any[], rosterPositions?: string[] | null) {
-	const remaining = players.slice().sort(byWeeklyThenRank);
+	const lockedStarters = players.filter((player) => player.lineupLocked && ![20, 21].includes(Number(player.lineupSlotId)));
+	const remaining = players.filter((player) => !player.lineupLocked).sort(byWeeklyThenRank);
 	const starters: any[] = [];
 	const slots = Array.isArray(rosterPositions) && rosterPositions.length
 		? rosterPositions.filter((slot) => !['BN', 'IR', 'TAXI'].includes(slot))
 		: Object.entries(starterNeeds).flatMap(([position, count]) => Array(count).fill(position)).concat('FLEX');
 	const orderedSlots = slots.slice().sort((a, b) => Number(isFlexible(a)) - Number(isFlexible(b)));
+	for (const player of lockedStarters) {
+		const slot = orderedSlots.findIndex((candidate) => slotEligibility(candidate).includes(player.position));
+		if (slot >= 0) { orderedSlots.splice(slot, 1); starters.push(player); }
+	}
 	for (const slot of orderedSlots) {
 		const eligible = slotEligibility(slot);
 		const index = remaining.findIndex((player) => eligible.includes(player.position));
 		if (index >= 0) starters.push(remaining.splice(index, 1)[0]);
 	}
-	return { starters: starters.sort((a, b) => String(a.position).localeCompare(String(b.position)) || byRank(a, b)), bench: remaining };
+	return { starters: starters.sort((a, b) => String(a.position).localeCompare(String(b.position)) || byRank(a, b)), bench: remaining.concat(players.filter((player) => player.lineupLocked && [20, 21].includes(Number(player.lineupSlotId)))) };
 }
 function isFlexible(slot: string) { return ['FLEX', 'SUPER_FLEX', 'REC_FLEX', 'WRRB_FLEX'].includes(slot); }
 function slotEligibility(slot: string) {

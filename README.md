@@ -24,6 +24,7 @@ Local-first fantasy football tooling focused first on reliable ESPN live-draft s
 - One-click authenticated ESPN league refresh with current rosters, lineup slots, injuries, schedule, and weekly/full-season projections
 - Current Sleeper rosters, submitted starters, reserve status, matchup data, scoring settings, and lineup configuration
 - Dark, interactive league season hub with player detail cards, week-specific start/sit optimization, league-filtered waiver targets, projected weekly power rankings, position comparison, and current-roster trade-fit targets
+- Start/sit change-review checklist with direct links to the Sleeper or ESPN lineup page; locked starters stay in the proposed lineup and locked bench players are excluded. This does not submit lineup changes.
 - Automated weekly consensus import with opponent, weekly/position ECR, expert spread, start/sit grade, and matchup outlook; close or source-conflicted lineup changes are shown as holds instead of forced recommendations
 - Kickoff-aware local refresh scheduler using the current NFL schedule: refresh checkpoints at 24 hours, 3 hours, 90 minutes, 30 minutes, and 10 minutes before each game, plus an hourly pregame startup check; imported ESPN and Sleeper rosters are refreshed and started games are marked locked
 - Local database backup and restore endpoints
@@ -147,6 +148,7 @@ Backup APIs:
 - Exact scoring and lineup settings require league import; live draft URLs alone identify the league and user team but do not contain full settings.
 - In-season ESPN refresh requires the encrypted credentials saved during league import; ESPN weekly projections are currently the primary start/sit input.
 - Sleeper start/sit imports the broader authenticated ESPN weekly player pool, rescales available offensive stat lines under the imported Sleeper scoring rules, uses an ESPN weekly scoring proxy for defenses, then falls back to consensus rank and injury status when no matched projection exists. Coverage is shown in the UI and close calls with missing projections should be treated as provisional.
+- Sleeper's documented API is read-only, and this app has no verified ESPN lineup-write integration. Review changes in the app, then make and confirm them on the platform; the checklist is not an Apply action.
 - The bundled cross-provider identity catalog is useful for ID reconciliation but is not itself a current ranking or projection source.
 - Some 2026 rookies and defenses need newer provider identity mappings.
 - The league page still has several non-blocking accessibility warnings.
